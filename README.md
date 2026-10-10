@@ -1,5 +1,10 @@
 # [NeurIPS 2025] Delving into Cascaded Instability: A Lipschitz Continuity View on Image Restoration and Object Detection Synergy
 
+[![NeurIPS 2025](docs/assets/neurips-2025.svg)](https://proceedings.neurips.cc/paper_files/paper/2025/hash/f115f619b62833aadc5acb058975b0e6-Abstract-Conference.html)
+[![arXiv](https://img.shields.io/badge/arXiv-2510.24232-b31b1b.svg?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2510.24232)
+[![BibTeX](https://img.shields.io/badge/%F0%9F%93%9A_Citation-BibTeX-7C3AED.svg)](#citations)
+[![License: GPL v3](https://img.shields.io/badge/%E2%9A%96%EF%B8%8F_License-GPL_v3-blue.svg)](LICENSE)
+
 ## Abstract
 
 To improve detection robustness in adverse conditions (e.g., haze and low light), image restoration is commonly applied as a pre-processing step to enhance image quality for the detector. However, the functional mismatch between restoration and detection networks can introduce instability and hinder effective integration---an issue that remains underexplored. We revisit this limitation through the lens of Lipschitz continuity, analyzing the functional differences between restoration and detection networks in both the input space and the parameter space. Our analysis shows that restoration networks perform smooth, continuous transformations, while object detectors operate with discontinuous decision boundaries, making them highly sensitive to minor perturbations. This mismatch introduces instability in traditional cascade frameworks, where even imperceptible noise from restoration is amplified during detection, disrupting gradient flow and hindering optimization. To address this, we propose Lipschitz-regularized object detection (LROD), a simple yet effective framework that integrates image restoration directly into the detector’s feature learning, harmonizing the Lipschitz continuity of both tasks during training. We implement this framework as Lipschitz-regularized YOLO (LR-YOLO), extending seamlessly to existing YOLO detectors. Extensive experiments on haze and low-light benchmarks demonstrate that LR-YOLO consistently improves detection stability, optimization smoothness, and overall accuracy.

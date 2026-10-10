@@ -1,5 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from .yolo_detector import YOLODetector
+from .yolo_detector_with_sam_norm import YOLODetectorSAMNorm
 from .yolo_haze_detector import YOLOHazeDetector
 from .yolo_haze_dehaze_detector import YOLOHazeDehazeDetector
 from .yolo_dark_enhance_detector import YOLODarkEnhanceDetector
@@ -20,7 +21,7 @@ from .yolo_haze_sfnet_detector_AD import YOLOHazeSFNetDetectorAD
 from .yolo_dark_enhance_detector_AD import YOLODarkEnhanceDetectorAD
 from.yolo_all_in_one_detector import YOLOAllInOneDetector
 
-__all__ = ['YOLODetector', 'YOLOHazeDetector', 'YOLOHazeDehazeDetector', 'YOLODehazeDetector', 'YOLOOnlyDehazeDetector', 
+__all__ = ['YOLODetector', 'YOLODetectorSAMNorm', 'YOLOHazeDetector', 'YOLOHazeDehazeDetector', 'YOLODehazeDetector', 'YOLOOnlyDehazeDetector',
            'YOLOReconstructDetector', 'YOLOReconstructDehazeDetector', 'YOLOOnlyReconstructDehazeDetector', 
            'YOLOReconstructOnlyReconstructDetector', 'YOLOHazeDehazeDetectorS2T', 'YOLOHazeDehazeDetectorT2S', 'YOLOHazeSFNetDetector',
            'YOLOHazeIADetector', 'YOLOHazeGDIPDetector', 'YOLOHazeDSNetDetector', 'YOLOHazeSFNetDetectorSR4IR', 'YOLOHazeSFNetDetectorAD',
