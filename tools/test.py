@@ -10,7 +10,7 @@ from mmengine.evaluator import DumpResults
 from mmengine.runner import Runner
 
 from mmyolo.registry import RUNNERS
-from mmyolo.utils import is_metainfo_lower
+from mmyolo.utils import is_metainfo_lower, register_all_modules
 
 
 # TODO: support fuse_conv_bn
@@ -76,6 +76,7 @@ def parse_args():
 
 def main():
     args = parse_args()
+    register_all_modules()
 
     # Reduce the number of repeated compilations and improve
     # training speed.
