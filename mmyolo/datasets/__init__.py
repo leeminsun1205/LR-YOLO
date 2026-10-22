@@ -7,11 +7,22 @@ from .yolov5_crowdhuman import YOLOv5CrowdHumanDataset
 from .yolov5_dota import YOLOv5DOTADataset
 from .yolov5_voc import YOLOv5VOCDataset
 from .yolov5_voc_fog import YOLOv5VOCFoggyDataset
-from .yolov5_voc_dark import YOLOv5VOCDarkDataset
-from .yolov5_voc_dark import YOLOv5ExDarkDataset
+from .yolov5_voc_dark import (
+    YOLOv5VOCDarkDataset,
+    YOLOv5ExDarkDataset,
+    YOLOv5BDD100KNightDataset,
+)
 
 __all__ = [
-    'YOLOv5CocoDataset', 'YOLOv5VOCDataset', 'BatchShapePolicy',
-    'yolov5_collate', 'YOLOv5CrowdHumanDataset', 'YOLOv5DOTADataset',
-    'PoseCocoDataset', 'YOLOv5VOCFoggyDataset', 'YOLOv5VOCDarkDataset', 'YOLOv5ExDarkDataset'
+    'YOLOv5CocoDataset',
+    'YOLOv5VOCDataset',
+    'BatchShapePolicy',
+    'yolov5_collate',
+    'YOLOv5CrowdHumanDataset',
+    'YOLOv5DOTADataset',
+    'PoseCocoDataset',
+    'YOLOv5VOCFoggyDataset',
+    'YOLOv5VOCDarkDataset',
+    'YOLOv5ExDarkDataset',
+    'YOLOv5BDD100KNightDataset',
 ]
