@@ -1,8 +1,21 @@
 _base_ = ['./lr_yolov10_s_bdd100k_night.py']
 
 max_epochs = 1
-save_epoch_intervals = 1
-val_interval_stage2 = 1
+
+train_batch_size_per_gpu = 2
+
+train_dataloader = dict(
+    batch_size=train_batch_size_per_gpu,
+    dataset=dict(
+        ann_file='/kaggle/working/train_small.txt'
+    )
+)
+
+val_dataloader = dict(
+    dataset=dict(
+        ann_file='/kaggle/working/val_small.txt'
+    )
+)
 
 train_cfg = dict(
     type='EpochBasedTrainLoop',
@@ -13,8 +26,7 @@ train_cfg = dict(
 default_hooks = dict(
     checkpoint=dict(
         type='CheckpointHook',
-        interval=1,
-        save_best='auto'
+        interval=1
     )
 )
 
