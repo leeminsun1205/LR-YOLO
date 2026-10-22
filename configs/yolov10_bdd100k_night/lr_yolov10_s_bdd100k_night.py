@@ -3,6 +3,11 @@ _base_ = [
     '3_finetune_yolov10_s_reconstruct_voc_dark_ep100_dark_train_no_aug_dark_test.py'
 ]
 
+custom_imports = dict(
+    imports=['mmyolo.datasets.yolov5_voc_dark'],
+    allow_failed_imports=False
+)
+
 dataset_type = 'YOLOv5BDD100KNightDataset'
 
 data_root = (
