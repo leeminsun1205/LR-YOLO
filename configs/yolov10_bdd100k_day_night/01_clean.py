@@ -1,7 +1,8 @@
 """BDD clean detection + reconstruction stage (all detector parameters learn).
 
 Architecture, augmentations and L1/LPIPS come from the released VOC config.
-The notebook supplies a transfer checkpoint with VOC classifiers removed.
+Default notebook initialization is scratch, as in the original clean config.
+Optional VOC transfer is a separately labeled experiment.
 """
 _base_ = ['../yolov10_voc_dark/2_yolov10_s_reconstruct_voc_dark_100e_no_aug.py']
 
