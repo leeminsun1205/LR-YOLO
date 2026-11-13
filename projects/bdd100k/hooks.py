@@ -27,6 +27,16 @@ class BDDRunDiagnosticsHook(Hook):
         self.started = time.monotonic()
         self.step_times = []
         torch.cuda.reset_peak_memory_stats()
+        self.peak_allocated = 0
+        self.peak_reserved = 0
+        self._capture_memory()
+
+    def _capture_memory(self):
+        # MMEngine's get_max_cuda_memory resets CUDA peak counters when logging.
+        # Keep our own maxima before LoggerHook (BELOW_NORMAL) runs.
+        import torch
+        self.peak_allocated = max(self.peak_allocated, torch.cuda.max_memory_allocated())
+        self.peak_reserved = max(self.peak_reserved, torch.cuda.max_memory_reserved())
 
     def before_train_iter(self, runner, batch_idx, data_batch=None):
         if self.record_step_times:
@@ -35,6 +45,7 @@ class BDDRunDiagnosticsHook(Hook):
             self.step_started = time.monotonic()
 
     def after_train_iter(self, runner, batch_idx, data_batch=None, outputs=None):
+        self._capture_memory()
         for key, value in (outputs or {}).items():
             if 'loss' in key and not math.isfinite(float(value)):
                 raise FloatingPointError(f'Non-finite {key} at iteration {runner.iter}')
@@ -43,14 +54,25 @@ class BDDRunDiagnosticsHook(Hook):
             torch.cuda.synchronize()
             self.step_times.append(time.monotonic() - self.step_started)
 
+    def after_val_iter(self, runner, batch_idx, data_batch=None, outputs=None):
+        self._capture_memory()
+
+    def after_train_epoch(self, runner):
+        self._capture_memory()
+
+    def after_val_epoch(self, runner, metrics=None):
+        self._capture_memory()
+
     def before_save_checkpoint(self, runner, checkpoint):
         checkpoint.setdefault('meta', {})['bdd_run'] = training_signature(runner.cfg)
 
     def after_train(self, runner):
         import torch
+        self._capture_memory()
         report = dict(elapsed_seconds=time.monotonic() - self.started,
-                      peak_allocated_bytes=torch.cuda.max_memory_allocated(),
-                      peak_reserved_bytes=torch.cuda.max_memory_reserved(),
+                      peak_allocated_bytes=self.peak_allocated,
+                      peak_reserved_bytes=self.peak_reserved,
+                      memory_measurement='persistent maxima captured before logger resets',
                       device_total_bytes=torch.cuda.get_device_properties(
                           torch.cuda.current_device()).total_memory,
                       gpu_name=torch.cuda.get_device_name(),
