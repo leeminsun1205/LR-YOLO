@@ -148,3 +148,16 @@ class FrozenNeckAdapterDetector(YOLODetector):
             raise RuntimeError('Feature levels do not match adapter levels')
         # Must stay outside no_grad: frozen head still backpropagates to adapters.
         return tuple(adapter(feature) for adapter, feature in zip(self.adapters, features))
+
+    def loss(self, batch_inputs, batch_data_samples):
+        """Request training logits without enabling frozen child BatchNorm."""
+        features = self.extract_feat(batch_inputs)
+        head_module = self.bbox_head.head_module
+        previous_training = head_module.training
+        # YOLOv10HeadModule gates DFL logits on this flag. Do not call train():
+        # child Conv/BatchNorm modules must remain in eval mode throughout.
+        head_module.training = True
+        try:
+            return self.bbox_head.loss(features, batch_data_samples)
+        finally:
+            head_module.training = previous_training
