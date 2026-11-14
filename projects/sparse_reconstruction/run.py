@@ -57,6 +57,37 @@ def audit(cfg):
     second = torch.autograd.grad(sparse.square().mean(), z)[0]
     torch.testing.assert_close(first,second,rtol=5e-4,atol=1e-7)
     del dense,reference,sparse,first,second,z
+    patch_objective_match = None
+    if model.sparse_case >= 2:
+        # Compare the ACTUAL patch L1/LPIPS objective, not full-image LPIPS.
+        # Sequential graphs limit audit VRAM; both paths see identical crops,
+        # targets and eval-mode BN/LPIPS. No extra encoder graph is retained.
+        with torch.no_grad():
+            _, trunk = model.encoder_and_trunk(batch['inputs'])
+        sampled = model.regions(batch['inputs'], batch['data_samples'])
+        target = torch.stack([batch['gts'][i,:,r['y']:r['y']+r['size'],
+                    r['x']:r['x']+r['size']] for i,r in sampled])
+
+        def patch_probe(use_sparse):
+            probe = trunk.detach().requires_grad_(True)
+            if use_sparse:
+                prediction = model.decode_regions(probe, sampled, height, width)
+            else:
+                rgb = model.backbone.final_conv(model.backbone.up3(probe))
+                prediction = torch.stack([rgb[i,:,r['y']:r['y']+r['size'],
+                    r['x']:r['x']+r['size']] for i,r in sampled])
+            terms = model.patch_losses(prediction, target, sampled)
+            values = torch.stack([terms['loss_reconstruct_l1'].mean(),
+                                  terms['loss_reconstruct_contrast'].mean()])
+            gradient = torch.autograd.grad(values.sum(), probe)[0]
+            return values.detach(), gradient.detach()
+
+        dense_values, dense_gradient = patch_probe(False)
+        crop_values, crop_gradient = patch_probe(True)
+        torch.testing.assert_close(dense_values,crop_values,rtol=5e-4,atol=1e-5)
+        torch.testing.assert_close(dense_gradient,crop_gradient,rtol=1e-3,atol=1e-6)
+        patch_objective_match = True
+        del trunk,target,dense_values,dense_gradient,crop_values,crop_gradient
     model.train()
     if model.sparse_case >= 1:
         assert not model.criterion_lpips.training
@@ -89,6 +120,7 @@ def audit(cfg):
         raise AssertionError('Encoder did not update or frozen weights changed')
     write(cfg,'audit',dict(status='passed',scientific_result=False,
         source_detection_features_match=True, late_crop_RGB_and_input_gradients_match=True,
+        patch_objective_and_Z_gradients_match=patch_objective_match,
         finite_encoder_reconstruction_gradient=True, encoder_updated=True,
         frozen_weights_unchanged=True, loss=float(total.detach()),
         sampling=model.last_sampling,contract=dict(cfg.sparse_contract),

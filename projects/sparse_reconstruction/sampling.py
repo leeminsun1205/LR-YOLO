@@ -4,13 +4,16 @@ import math
 
 
 def sample_regions(height, width, boxes, count=2, core=192, halo=32,
-                   alignment=16, object_probability=0.5, seed=42):
+                   alignment=16, object_probability=0.5, seed=42,
+                   stratified_pair=False):
     outer = core + 2 * halo
     if (count < 1 or core < 16 or halo < 0 or alignment < 2
             or alignment % 2 or core % alignment or halo % alignment
             or height % alignment or width % alignment
             or outer > min(height, width) or not 0 <= object_probability <= 1):
         raise ValueError('Invalid aligned crop budget/shape/probability')
+    if stratified_pair and count != 2:
+        raise ValueError('Stratified pair requires exactly two crops')
     rng = random.Random(seed)
     valid = []
     for box in boxes:
@@ -20,8 +23,9 @@ def sample_regions(height, width, boxes, count=2, core=192, halo=32,
         if x2 > x1 and y2 > y1:
             valid.append((x1,y1,x2,y2))
     result = []
-    for _ in range(count):
-        guided = bool(valid) and rng.random() < object_probability
+    for index in range(count):
+        guided = (bool(valid) and index == 0 if stratified_pair
+                  else bool(valid) and rng.random() < object_probability)
         if guided:
             x1, y1, x2, y2 = rng.choice(valid)
             # Uniform objects, never proportional to their area; retain jitter.

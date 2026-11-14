@@ -13,8 +13,10 @@ from .sampling import sample_regions, decoder_bounds
 class SelectiveReconstructionDetector(YOLOReconstructDehazeDetector):
     def __init__(self, sparse_case=0, crop_count=2, crop_core=192,
                  crop_halo=32, sampling_seed=42, **kwargs):
-        if sparse_case not in range(6):
-            raise ValueError('Supported cases: S0..S5')
+        if sparse_case not in range(7):
+            raise ValueError('Supported cases: S0..S6')
+        if sparse_case == 6 and crop_count != 2:
+            raise ValueError('S6 requires exactly two crops: object + uniform')
         super().__init__(**kwargs)
         self.sparse_case = sparse_case
         self.crop_count, self.crop_core, self.crop_halo = crop_count, crop_core, crop_halo
@@ -72,7 +74,7 @@ class SelectiveReconstructionDetector(YOLOReconstructDehazeDetector):
         return torch.stack(result)
 
     def regions(self, inputs, samples):
-        probability = {2: 0., 3: 0., 4: 1., 5: 0.5}[self.sparse_case]
+        probability = {2: 0., 3: 0., 4: 1., 5: 0.5, 6: 0.5}[self.sparse_case]
         packed = samples['bboxes_labels'].detach().cpu() if isinstance(samples, dict) else None
         result = []
         for image in range(len(inputs)):
@@ -81,6 +83,7 @@ class SelectiveReconstructionDetector(YOLOReconstructDehazeDetector):
             regions = sample_regions(*inputs.shape[-2:], boxes,
                 count=self.crop_count, core=self.crop_core, halo=self.crop_halo,
                 object_probability=probability,
+                stratified_pair=self.sparse_case == 6,
                 seed=self.sampling_seed + 1000003*self.sampling_step + 1009*get_rank() + image)
             result.extend((image, r) for r in regions)
         self.last_sampling = dict(regions=result, step=self.sampling_step,
