@@ -190,3 +190,13 @@ nguồn công bố không chứng minh toàn bộ lịch sử training của che
 Nguồn: https://github.com/diasuki/LR-YOLO#pretrained-models . Không tải release,
 chạy inference hay validate GPU thật trong bước cập nhật local này; tests dùng
 archive fixtures để kiểm tra selection/cache và config cho cả bốn ID.
+
+
+### Phiên bản notebook riêng đã cấu hình token
+
+Theo yêu cầu chủ project, bản notebook được tạo tại workspace này đã chọn
+NGROK_TOKEN_MODE='inline' và có token trong cell tham số: không hiện prompt và
+không gọi Kaggle Secrets. Builder đọc token từ vision_demo/runtime/ngrok_token.txt
+(file local được ignore, không nằm trong source bundle) để giữ cấu hình khi
+rebuild. Clone không có file cấu hình này sẽ mặc định prompt; có thể chọn lại
+mode bằng cell tham số. Không in giá trị token trong log.

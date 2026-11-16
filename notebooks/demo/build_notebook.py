@@ -16,9 +16,11 @@ def cell(kind,source):
 
 
 def main():
+    token_path=ROOT/'vision_demo/runtime/ngrok_token.txt'
+    inline_token=token_path.read_text().strip() if token_path.is_file() else ''
     files={}
     for p in (ROOT/'vision_demo').rglob('*'):
-        if not p.is_file() or any(x in p.parts for x in ('node_modules','__pycache__','tests')):continue
+        if not p.is_file() or any(x in p.parts for x in ('node_modules','__pycache__','tests','runtime')):continue
         if p.suffix not in ('.py','.json','.html','.tsx','.ts','.js','.css','.txt'):continue
         files[str(p.relative_to(ROOT))]=p.read_text()
     for name in ('bdd100k_workflow.py','voc_adapter_workflow.py','original_voc_workflow.py'):
@@ -68,7 +70,8 @@ DATA_OVERRIDES={}  # Optional family -> explicit native train/clean_val settings
 AUTHOR_RELEASES=['voc_dark_v10']  # Also: voc_dark_v8, voc_haze_v10, voc_haze_v8.
 AUTHOR_CHECKPOINT_MEMBERS={}  # Only needed if an archive contains several candidates.
 AUTHOR_CACHE=Path('/kaggle/working/lryolo_author_models')
-NGROK_TOKEN_MODE='prompt'  # 'prompt' for interactive paste, 'secrets' for Save & Run All.
+NGROK_TOKEN_MODE=__TOKEN_MODE_LITERAL__
+NGROK_AUTHTOKEN=__TOKEN_VALUE_LITERAL__  # Used directly; never printed.
 MODELS=None  # Mounted/new self-trained checkpoints; author releases added separately.
 # MODELS=[dict(id='my-s6',label='YOLOv10 S6',architecture='v10',degradation='low_light',
 #   stage='dark',case_id=6,checkpoint='/kaggle/input/.../best_....pth',
@@ -112,11 +115,14 @@ import urllib.request
 from pyngrok import ngrok
 # Token stays in memory; never print it or place it in frontend files.
 from vision_demo.kaggle_setup import configure_ngrok
-if NGROK_TOKEN_MODE=='prompt':
+if NGROK_TOKEN_MODE=='inline':
+    if not NGROK_AUTHTOKEN:raise ValueError('Inline token is empty')
+    configure_ngrok(ngrok,token=NGROK_AUTHTOKEN)
+elif NGROK_TOKEN_MODE=='prompt':
     from getpass import getpass
     configure_ngrok(ngrok,token=getpass('Ngrok authtoken (hidden): '))
 elif NGROK_TOKEN_MODE=='secrets':configure_ngrok(ngrok)
-else:raise ValueError('NGROK_TOKEN_MODE must be prompt or secrets')
+else:raise ValueError('NGROK_TOKEN_MODE must be inline, prompt or secrets')
 if 'api_process' in globals() and api_process.poll() is None:
     raise RuntimeError('Demo already running; stop it using the final cell first.')
 env=os.environ.copy()
@@ -157,6 +163,8 @@ if 'api_process' in globals() and api_process.poll() is None:
 if 'log_file' in globals():log_file.close()
 print('Demo stopped. Runtime artifacts remain in',OUTPUT)
 ''')]
+    for c in cells:
+        c['source']=c['source'].replace('__TOKEN_MODE_LITERAL__',repr('inline' if inline_token else 'prompt')).replace('__TOKEN_VALUE_LITERAL__',repr(inline_token))
     for i,c in enumerate(cells):c['id']=f'demo-{i:03d}'
     nb=dict(nbformat=4,nbformat_minor=5,metadata=dict(kernelspec=dict(display_name='Python 3',language='python',name='python3'),language_info=dict(name='python',version='3.10.10'),demo_bundle_sha256=sha),cells=cells)
     p=Path(__file__).with_name('01_kaggle_lryolo_demo.ipynb');p.write_text(json.dumps(nb,ensure_ascii=False,indent=1)+'\n')
