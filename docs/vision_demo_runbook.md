@@ -120,3 +120,73 @@ Tests API/image fixtures dùng fake engine chỉ trong test; ứng dụng không
 mock-inference mode. Local validation không chứng minh checkpoint/GPU/Ngrok đã
 hoạt động; cần smoke ảnh thật trên Kaggle và đối chiếu native inference trước
 khi bảo vệ. Trạng thái test thực tế được ghi trong docs/experiment_log.md.
+
+
+## Kaggle Secrets trả404 / ConnectionError
+
+Nếu lỗi tại UserSecretsClient.get_secret, lỗi xảy ra trước khi start server,
+chưa chứng minh Ngrok token hoặc checkpoint sai. Kiểm tra Add-ons > Secrets,
+label chính xác NGROK_AUTH_TOKEN và quyền cho notebook hiện tại; kiểm tra Internet.
+Nếu cấu hình đã đúng mà backend Secrets vẫn lỗi, trong phiên interactive có thể
+chạy cell riêng (không ghi token vào source/output):
+
+```python
+import os
+from getpass import getpass
+os.environ['NGROK_AUTHTOKEN'] = getpass('Ngrok authtoken: ')
+```
+
+Rerun cell server của notebook mới; helper ưu tiên biến môi trường trên trước
+Kaggle Secrets. Không tự prompt trong Save & Run All. Với notebook cũ gọi trực
+tiếp UserSecretsClient, thay dòng ngrok.set_auth_token đó bằng
+`ngrok.set_auth_token(os.environ['NGROK_AUTHTOKEN'])` trong phiên đang mở.
+
+## Tải checkpoint tác giả (2026-11-16)
+
+Notebook mới mặc định:
+
+```python
+AUTHOR_RELEASES = ['voc_dark_v10']
+AUTHOR_CHECKPOINT_MEMBERS = {}
+AUTHOR_CACHE = Path('/kaggle/working/lryolo_author_models')
+MODELS = None
+NGROK_TOKEN_MODE = 'prompt'
+```
+
+Không cần có checkpoint tự train để bắt đầu. Cell chuẩn bị registry sẽ tải từ
+link chính thức rồi thêm model có nhãn Author. Chọn prompt khi chạy interactive;
+ô nhập token được ẩn, không lưu token vào notebook. Với Save & Run All, dùng
+NGROK_TOKEN_MODE='secrets' hoặc cấu hình môi trường riêng thay vì prompt.
+
+Bốn ID được xác minh từ README chính thức:
+
+| ID | Model | Classes |
+|---|---|---:|
+| voc_dark_v10 | VOC_Dark / LR-YOLOv10-S |10|
+| voc_dark_v8 | VOC_Dark / LR-YOLOv8-S |10|
+| voc_haze_v10 | VOC_Haze / LR-YOLOv10-S |5|
+| voc_haze_v8 | VOC_Haze / LR-YOLOv8-S |5|
+
+Ví dụ tải cả hai bản low-light:
+`AUTHOR_RELEASES=['voc_dark_v10','voc_dark_v8']`. Chỉ tải model đã chọn, không tự
+tải cả bốn. Muốn random haze cũng thêm haze vào GALLERY_FAMILIES. Muốn chỉ dùng
+model tự train, đặt AUTHOR_RELEASES=[] và khai báo MODELS hoặc dùng discovery.
+
+Release cache gồm file download, author_checkpoint.pth và release.json chứa
+nguồn, file/member, hashes và config. Đã có cache thì không tải lại. Không giải
+nén toàn archive hoặc chạy config lấy từ archive. Chỉ dùng native eval config
+trong repo đã pin. Checkpoint tự train bổ sung vào registry mà không thay model
+Author. Các AP paper không được tự thêm vào bảng như kết quả đo của demo.
+
+Một release có nhiều checkpoint phù hợp sẽ yêu cầu chọn EXACT member bằng
+AUTHOR_CHECKPOINT_MEMBERS, không tự chọn theo AP. VOC_Dark/v10 dùng filename
+best_pascal_voc_mAP_epoch_97.pth đã có bằng chứng lịch sử. Ba release còn lại
+được xác minh link/config, chưa giải nén real archive local; xử lý unique best
+hoặc một checkpoint duy nhất, và báo rõ nếu layout khác. Nếu Drive quota hoặc
+trả HTML, quá trình sẽ báo lỗi; không tạo registry giả hay bỏ qua kiểm tra.
+Inference strict-check keys/shapes/class metadata khi model được load lần đầu;
+nguồn công bố không chứng minh toàn bộ lịch sử training của checkpoint.
+
+Nguồn: https://github.com/diasuki/LR-YOLO#pretrained-models . Không tải release,
+chạy inference hay validate GPU thật trong bước cập nhật local này; tests dùng
+archive fixtures để kiểm tra selection/cache và config cho cả bốn ID.

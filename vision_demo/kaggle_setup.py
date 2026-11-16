@@ -47,3 +47,25 @@ def prepare_gallery(family,cache,auto_download=True,overrides=None,pool='clean_v
     else:raise ValueError('Gallery pool must be clean_val or fixed_test')
     return dict(id=f'{family}_{pool}',root=spec['root'],prefix=spec['prefix'],manifest=spec['manifest'],
                 degradation=family,split=pool,source=source,already_degraded=degraded)
+
+
+def configure_ngrok(ngrok, secrets_client=None, token=None):
+    """Resolve credentials without printing them; no interactive prompt in batch runs."""
+    token=token or os.environ.get('NGROK_AUTHTOKEN')
+    if not token:
+        try:
+            if secrets_client is None:
+                from kaggle_secrets import UserSecretsClient
+                secrets_client=UserSecretsClient()
+            token=secrets_client.get_secret('NGROK_AUTH_TOKEN')
+        except Exception:
+            raise RuntimeError(
+                'Cannot read NGROK_AUTH_TOKEN from Kaggle Secrets. '
+                'Check Add-ons > Secrets: exact label and permission for this notebook. '
+                'The Kaggle Secrets backend may also be unavailable. '
+                'For an interactive session only, set NGROK_AUTHTOKEN in memory '
+                'using getpass, then rerun this server cell. No server was started.'
+            ) from None
+    if not isinstance(token,str) or not token.strip():
+        raise ValueError('Ngrok token is empty')
+    ngrok.set_auth_token(token.strip())

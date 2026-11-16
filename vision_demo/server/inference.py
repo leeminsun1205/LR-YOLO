@@ -70,7 +70,7 @@ class Engine:
         self.pipeline=Compose(serving_pipeline(cfg.test_dataloader.dataset.pipeline))
         self.model=model; self.key=key
         self.metadata[key]=dict(checkpoint_sha256=sha,checkpoint_epoch=meta.get('epoch'),
-            stage=entry['stage'],case_id=entry['case_id'],architecture=entry['architecture'],
+            origin=entry.get('origin','self_trained'),stage=entry['stage'],case_id=entry['case_id'],architecture=entry['architecture'],
             degradation=entry['degradation'],provenance_verified=bool(sparse),
             training_target=contract.get('target_epochs'),completed_epochs=entry.get('completed_epochs'),
             run_target_epochs=entry.get('run_target_epochs'),precision='fp32')

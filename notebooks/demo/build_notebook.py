@@ -44,7 +44,9 @@ print('Demo bundle:',BUNDLE,flush=True)
 '''
     cells=[cell('markdown','''
 # LR-YOLO Vision Lab · Kaggle demo
-React + FastAPI + Ngrok. No OpenAI API or training. Attach checkpoints WITH
+React + FastAPI + Ngrok. No OpenAI API or training. Default downloads the author
+VOC_Dark/v10 release; no self-trained checkpoint required. Other3releases optional.
+For your own models, attach checkpoints WITH
 resolved_config.py, provenance.json and session_state.json; attach tested MMCV
 T4 wheel. Enable GPU and Internet. Create NGROK_AUTH_TOKEN in Kaggle Secrets.
 Default gallery downloads the author clean VOC bundle if not mounted. Low-light
@@ -63,7 +65,11 @@ GALLERY_POOL='clean_val'  # Or fixed_test: already degraded, do not darken again
 AUTO_DOWNLOAD_DATASETS=True
 DATA_CACHE=Path('/kaggle/working/lryolo_voc_data')
 DATA_OVERRIDES={}  # Optional family -> explicit native train/clean_val settings.
-MODELS=None  # None discovers mounted main-run sidecars; or supply explicit list below.
+AUTHOR_RELEASES=['voc_dark_v10']  # Also: voc_dark_v8, voc_haze_v10, voc_haze_v8.
+AUTHOR_CHECKPOINT_MEMBERS={}  # Only needed if an archive contains several candidates.
+AUTHOR_CACHE=Path('/kaggle/working/lryolo_author_models')
+NGROK_TOKEN_MODE='prompt'  # 'prompt' for interactive paste, 'secrets' for Save & Run All.
+MODELS=None  # Mounted/new self-trained checkpoints; author releases added separately.
 # MODELS=[dict(id='my-s6',label='YOLOv10 S6',architecture='v10',degradation='low_light',
 #   stage='dark',case_id=6,checkpoint='/kaggle/input/.../best_....pth',
 #   config='/kaggle/input/.../resolved_config.py')]
@@ -83,25 +89,34 @@ if missing:subprocess.run([sys.executable,'-m','pip','install',*missing],check=T
 print('Serving packages ready',flush=True)
 '''),cell('code','''
 from vision_demo.kaggle_setup import discover_models,prepare_gallery
-if MODELS is None:MODELS=discover_models()
-print('Model inventory:',json.dumps(MODELS,indent=2),flush=True)
-if not MODELS:print('No model found: set MODELS explicitly. Gallery/preview will still work.')
+from vision_demo.releases import prepare_author_release
+registered_models=discover_models() if MODELS is None else list(MODELS)
+author_models=[prepare_author_release(REPO,AUTHOR_CACHE,key,
+    member=AUTHOR_CHECKPOINT_MEMBERS.get(key)) for key in AUTHOR_RELEASES]
+model_registry=author_models+registered_models
+if len({m['id'] for m in model_registry})!=len(model_registry):raise ValueError('Duplicate model registry IDs')
+print('Model inventory:',json.dumps(model_registry,indent=2),flush=True)
+if not model_registry:print('No model found: set MODELS explicitly. Gallery/preview will still work.')
 gallery=[]
 for family in GALLERY_FAMILIES:
     print('Preparing demo VOC pool:',family,GALLERY_POOL,flush=True)
     gallery.append(prepare_gallery(family,DATA_CACHE,auto_download=AUTO_DOWNLOAD_DATASETS,
         overrides=DATA_OVERRIDES.get(family),pool=GALLERY_POOL))
-for name,value in [('models',MODELS),('gallery',gallery),('reports',REPORTS)]:
+for name,value in [('models',model_registry),('gallery',gallery),('reports',REPORTS)]:
     (OUTPUT/f'{name}.json').write_text(json.dumps(value,indent=2))
 # Frontend is prebuilt in the embedded bundle; Node is not required on Kaggle.
 assert (BUNDLE/'vision_demo/web/dist/index.html').is_file(),'Frontend missing; rebuild notebook after npm build.'
 print('Registry/gallery configured. Start server in next cell.',flush=True)
 '''),cell('code','''
 import urllib.request
-from kaggle_secrets import UserSecretsClient
 from pyngrok import ngrok
 # Token stays in memory; never print it or place it in frontend files.
-ngrok.set_auth_token(UserSecretsClient().get_secret('NGROK_AUTH_TOKEN'))
+from vision_demo.kaggle_setup import configure_ngrok
+if NGROK_TOKEN_MODE=='prompt':
+    from getpass import getpass
+    configure_ngrok(ngrok,token=getpass('Ngrok authtoken (hidden): '))
+elif NGROK_TOKEN_MODE=='secrets':configure_ngrok(ngrok)
+else:raise ValueError('NGROK_TOKEN_MODE must be prompt or secrets')
 if 'api_process' in globals() and api_process.poll() is None:
     raise RuntimeError('Demo already running; stop it using the final cell first.')
 env=os.environ.copy()

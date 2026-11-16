@@ -131,6 +131,19 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result[1:3],original[1:3])
         self.assertEqual(original[0]['type'],'LoadImageFromFile')
 
+    async def test_ngrok_secret_failure_is_actionable_and_never_starts_tunnel(self):
+        from vision_demo.kaggle_setup import configure_ngrok
+        from unittest.mock import Mock,patch
+        client=Mock();client.get_secret.side_effect=ConnectionError('HTTP404')
+        ngrok=Mock()
+        with patch.dict('os.environ',{},clear=True):
+            with self.assertRaisesRegex(RuntimeError,'Kaggle Secrets'):
+                configure_ngrok(ngrok,client)
+            ngrok.set_auth_token.assert_not_called()
+            configure_ngrok(ngrok,client,token=' fixture-token ')
+            ngrok.set_auth_token.assert_called_once_with('fixture-token')
+        client.get_secret.assert_called_once_with('NGROK_AUTH_TOKEN')
+
     async def test_registry_and_manifest_reject_conflicts(self):
         d=dict(id='a',architecture='v10',degradation='low_light',stage='clean',case_id=0,checkpoint='/missing/x.pth',config='/missing/cfg.py')
         p=self.root/'models.json';p.write_text(json.dumps([d]));self.assertFalse(load_registry(p)['a']['available'])
