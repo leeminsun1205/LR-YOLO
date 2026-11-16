@@ -167,3 +167,14 @@ This project utilizes code from the following open-source implementations:
 * YOLOv10: [yolov10](https://github.com/THU-MIG/yolov10)
 
 We are grateful to the authors of these repositories for making their work publicly available.
+
+
+## Vision Lab research demo
+
+An optional React/FastAPI demo for native LR-YOLO and the project's selective
+reconstruction experiments lives in [vision_demo/](vision_demo/README.md).
+Run the [standalone Kaggle notebook](notebooks/demo/01_kaggle_lryolo_demo.ipynb)
+with trusted checkpoint/config inputs and the tested MMCV wheel. It supports
+random VOC images, degradation previews, bounding boxes and A/B comparisons.
+See the [demo runbook](docs/vision_demo_runbook.md). No OpenAI API is required;
+the demo does not train models or replace benchmark evaluation.

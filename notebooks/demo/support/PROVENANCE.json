@@ -1,0 +1,18 @@
+{
+  "bdd100k_workflow.py": {
+    "source": "notebooks/bdd100k_workflow.py",
+    "sha256": "d5270dd0dceb0dc9761dd0617b6056ff1a5f1ddd50d1b3ba585b1c8a00361cfc"
+  },
+  "voc_adapter_workflow.py": {
+    "source": "notebooks/voc_adapter_workflow.py",
+    "sha256": "e2ab461f7035088be667221e47b0d26d720c5228d631a85e0cfb765c7f9b49b6"
+  },
+  "original_voc_workflow.py": {
+    "source": "notebooks/original_voc_workflow.py",
+    "sha256": "bc781a9612422044fcf70a32db4cbe53490b6ec0c0408164370f6299cf1fe041"
+  },
+  "selective_protocol_data.py": {
+    "source": "notebooks/selective_reconstruction/protocol_data.py",
+    "sha256": "0d8f07cf7b5bd303d661b5c42e4174d8dc1ca0f1d10f862eee92ff1300402b99"
+  }
+}

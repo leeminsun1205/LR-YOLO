@@ -1,0 +1,4 @@
+[
+  {"id":"v10-lowlight-s0","label":"LR-YOLOv10 · Baseline S0","architecture":"v10","degradation":"low_light","stage":"dark","case_id":0,"checkpoint":"/kaggle/input/YOUR_BASELINE/best_voc_standard_mAP_epoch_N.pth","config":"/kaggle/input/YOUR_BASELINE/resolved_config.py"},
+  {"id":"v10-lowlight-s6","label":"LR-YOLOv10 · Selective S6","architecture":"v10","degradation":"low_light","stage":"dark","case_id":6,"checkpoint":"/kaggle/input/YOUR_S6/best_voc_standard_mAP_epoch_N.pth","config":"/kaggle/input/YOUR_S6/resolved_config.py"}
+]

@@ -1,0 +1,1 @@
+Demo-only snapshots of the project workflow/data helpers. These copies make this Git checkout and notebook builder self-contained. Import paths are unchanged inside the Kaggle bundle. See PROVENANCE.json for original paths and hashes. Do not silently update these during ongoing training; original training helpers remain outside this directory.

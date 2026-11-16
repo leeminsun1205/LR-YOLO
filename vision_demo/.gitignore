@@ -1,0 +1,8 @@
+web/node_modules/
+__pycache__/
+*.pyc
+runtime/
+
+# Prebuilt frontend ships with the standalone Kaggle notebook.
+!web/dist/
+!web/dist/**
