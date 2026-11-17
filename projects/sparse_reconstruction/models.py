@@ -6,21 +6,24 @@ from torch import nn
 from mmengine.dist import get_rank
 from mmyolo.registry import MODELS
 from mmyolo.models.detectors.yolo_reconstruct_dehaze_detector import YOLOReconstructDehazeDetector
-from .sampling import sample_regions, decoder_bounds
+from .sampling import sample_regions, sample_coverage_regions, decoder_bounds
 
 
 @MODELS.register_module()
 class SelectiveReconstructionDetector(YOLOReconstructDehazeDetector):
     def __init__(self, sparse_case=0, crop_count=2, crop_core=192,
-                 crop_halo=32, sampling_seed=42, **kwargs):
-        if sparse_case not in range(7):
-            raise ValueError('Supported cases: S0..S6')
-        if sparse_case == 6 and crop_count != 2:
-            raise ValueError('S6 requires exactly two crops: object + uniform')
+                 crop_halo=32, sampling_seed=42, coverage_candidates=8, **kwargs):
+        if sparse_case not in (*range(7),8):
+            raise ValueError('Supported cases: S0..S6 and S8; S7 is reserved')
+        if sparse_case in (6,8) and crop_count != 2:
+            raise ValueError('S6/S8 require exactly two crops: object + uniform')
+        if sparse_case==8 and (not isinstance(coverage_candidates,int) or isinstance(coverage_candidates,bool) or coverage_candidates<2):
+            raise ValueError('S8 needs at least two candidate locations')
         super().__init__(**kwargs)
         self.sparse_case = sparse_case
         self.crop_count, self.crop_core, self.crop_halo = crop_count, crop_core, crop_halo
         self.sampling_seed, self.sampling_step = sampling_seed, 0
+        self.coverage_candidates=coverage_candidates
         self.last_sampling = {}
 
     def train(self, mode=True):
@@ -74,17 +77,21 @@ class SelectiveReconstructionDetector(YOLOReconstructDehazeDetector):
         return torch.stack(result)
 
     def regions(self, inputs, samples):
-        probability = {2: 0., 3: 0., 4: 1., 5: 0.5, 6: 0.5}[self.sparse_case]
+        probability = {2: 0., 3: 0., 4: 1., 5: 0.5, 6: 0.5, 8: 0.5}[self.sparse_case]
         packed = samples['bboxes_labels'].detach().cpu() if isinstance(samples, dict) else None
         result = []
         for image in range(len(inputs)):
             boxes = (packed[packed[:, 0] == image, 2:6].tolist() if packed is not None
                      else samples[image].gt_instances.bboxes.detach().cpu().tolist())
-            regions = sample_regions(*inputs.shape[-2:], boxes,
-                count=self.crop_count, core=self.crop_core, halo=self.crop_halo,
-                object_probability=probability,
-                stratified_pair=self.sparse_case == 6,
-                seed=self.sampling_seed + 1000003*self.sampling_step + 1009*get_rank() + image)
+            seed=self.sampling_seed + 1000003*self.sampling_step + 1009*get_rank() + image
+            if self.sparse_case==8:
+                regions=sample_coverage_regions(*inputs.shape[-2:],boxes,
+                    count=self.crop_count,core=self.crop_core,halo=self.crop_halo,
+                    seed=seed,candidates=self.coverage_candidates)
+            else:
+                regions = sample_regions(*inputs.shape[-2:], boxes,
+                    count=self.crop_count, core=self.crop_core, halo=self.crop_halo,
+                    object_probability=probability,stratified_pair=self.sparse_case == 6,seed=seed)
             result.extend((image, r) for r in regions)
         self.last_sampling = dict(regions=result, step=self.sampling_step,
                                   processed_area_ratio=sum(r['size']**2 for _, r in result)

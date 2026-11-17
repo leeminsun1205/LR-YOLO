@@ -56,7 +56,7 @@ class Engine:
         # path is the native full reconstruction detector, with identical tensors.
         if cfg.model.type=='SelectiveReconstructionDetector':
             cfg.model.type='YOLOReconstructDehazeDetector'
-            for p in ('sparse_case','crop_count','crop_core','crop_halo','sampling_seed'): cfg.model.pop(p,None)
+            for p in ('sparse_case','crop_count','crop_core','crop_halo','sampling_seed','coverage_candidates'): cfg.model.pop(p,None)
         if cfg.model.type not in ('YOLOReconstructDetector','YOLOReconstructDehazeDetector'):
             raise ValueError('Unsupported detector type; use native/selective reconstruction checkpoints')
         cfg.model.data_preprocessor.type='YOLOv5DetDataPreprocessor'

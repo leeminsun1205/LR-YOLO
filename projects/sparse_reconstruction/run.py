@@ -33,8 +33,18 @@ def audit(cfg):
     loader_cfg.batch_size = 1
     loader_cfg.num_workers = 0
     loader_cfg.persistent_workers = False
-    raw = next(iter(Runner.build_dataloader(loader_cfg, seed=cfg.randomness.seed)))
-    batch = model.data_preprocessor(raw, training=True)
+    audit_loader=Runner.build_dataloader(loader_cfg, seed=cfg.randomness.seed)
+    for audit_index,raw in enumerate(audit_loader):
+        batch = model.data_preprocessor(raw, training=True)
+        if model.sparse_case!=8:break
+        packed=batch['data_samples']['bboxes_labels']
+        h,w=batch['inputs'].shape[-2:]
+        visible=((packed[:,4].clamp(max=w)>packed[:,2].clamp(min=0)) &
+                 (packed[:,5].clamp(max=h)>packed[:,3].clamp(min=0)))
+        if visible.any().item():break
+    else:
+        raise ValueError('S8 audit needs a visible augmented GT box; change seed/subset and retry')
+
     with torch.no_grad():
         original_features, _ = model.backbone(batch['inputs'])
         new_features, z = model.encoder_and_trunk(batch['inputs'])
@@ -88,6 +98,33 @@ def audit(cfg):
         torch.testing.assert_close(dense_gradient,crop_gradient,rtol=1e-3,atol=1e-6)
         patch_objective_match = True
         del trunk,target,dense_values,dense_gradient,crop_values,crop_gradient
+    coverage_verified = None
+    if model.sparse_case == 8:
+        from .sampling import sample_regions
+        import random
+        # Independently replay S6 anchor/uniform draws on actual augmented GT.
+        packed=batch['data_samples']['bboxes_labels'].detach().cpu()
+        for image in range(len(batch['inputs'])):
+            visible=[]
+            for a,b,c,d in packed[packed[:,0]==image,2:6].tolist():
+                box=(max(0.,a),max(0.,b),min(float(width),c),min(float(height),d))
+                if box[2]>box[0] and box[3]>box[1]:visible.append(box)
+            seed=model.sampling_seed+1000003*model.sampling_step+1009*get_rank()+image
+            baseline=sample_regions(height,width,visible,count=2,core=model.crop_core,
+                halo=model.crop_halo,seed=seed,stratified_pair=True)
+            actual=[r for i,r in sampled if i==image]
+            if len(actual)!=2 or actual[1]!=baseline[1]:
+                raise AssertionError('S8 changed the S6 uniform patch')
+            if visible:
+                anchor=random.Random(seed).choice(visible)
+                def coverage(r):
+                    x,y=r['x']+r['core_x'],r['y']+r['core_y'];side=r['core']
+                    return max(0,min(x+side,anchor[2])-max(x,anchor[0]))*max(0,min(y+side,anchor[3])-max(y,anchor[1]))
+                if actual[0]['anchor_box']!=list(anchor) or coverage(actual[0])+1e-8<coverage(baseline[0]):
+                    raise AssertionError('S8 anchor changed or selected coverage regressed')
+            elif actual!=baseline:
+                raise AssertionError('S8 empty-image fallback differs from S6')
+        coverage_verified=True
     model.train()
     if model.sparse_case >= 1:
         assert not model.criterion_lpips.training
@@ -121,6 +158,7 @@ def audit(cfg):
     write(cfg,'audit',dict(status='passed',scientific_result=False,
         source_detection_features_match=True, late_crop_RGB_and_input_gradients_match=True,
         patch_objective_and_Z_gradients_match=patch_objective_match,
+        coverage_sampling_verified=coverage_verified,audit_loader_batch_index=audit_index,
         finite_encoder_reconstruction_gradient=True, encoder_updated=True,
         frozen_weights_unchanged=True, loss=float(total.detach()),
         sampling=model.last_sampling,contract=dict(cfg.sparse_contract),

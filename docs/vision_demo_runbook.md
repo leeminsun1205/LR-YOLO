@@ -200,3 +200,13 @@ không gọi Kaggle Secrets. Builder đọc token từ vision_demo/runtime/ngrok
 (file local được ignore, không nằm trong source bundle) để giữ cấu hình khi
 rebuild. Clone không có file cấu hình này sẽ mặc định prompt; có thể chọn lại
 mode bằng cell tham số. Không in giá trị token trong log.
+
+
+## S8 checkpoints and sampling illustration
+
+The demo now accepts case8 (coverage-guided object/uniform). S7 remains reserved.
+Native inference drops the training-only coverage_candidates knob along with
+other sampler fields and strict-loads the original prediction tensors. The
+illustration tab includes S8 and uses its actual pure-Python geometry sampler;
+it does not perform8network predictions. Inference selection prefers an
+availableS8 checkpoint as comparisonB, otherwiseS6. No S8 model/AP is fabricated.

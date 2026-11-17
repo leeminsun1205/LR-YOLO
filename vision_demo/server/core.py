@@ -30,7 +30,7 @@ def load_registry(path):
             raise ValueError('Invalid/duplicate model ID')
         if e['degradation'] not in CLASSES or e['architecture'] not in ('v8','v10'):
             raise ValueError('Invalid model family/architecture')
-        if e.get('stage') not in ('clean','dark') or e.get('case_id') not in range(7):
+        if e.get('stage') not in ('clean','dark') or e.get('case_id') not in (*range(7),8):
             raise ValueError('Model stage/case must be explicit')
         if e['stage']=='clean' and e['case_id']!=0: raise ValueError('Clean requires S0')
         e['classes']=list(CLASSES[e['degradation']])

@@ -85,7 +85,7 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
     @app.get('/api/examples/{key}/sampling')
     def sampling_view(key:str,case_id:int=6,seed:int=42):
         if key not in gallery.items: raise HTTPException(404,'Không tìm thấy ảnh VOC')
-        if case_id not in (0,1,3,6): raise HTTPException(422,'Minh họa S0/S1/S3/S6')
+        if case_id not in (0,1,3,6,8): raise HTTPException(422,'Minh họa S0/S1/S3/S6/S8')
         import importlib.util
         from PIL import Image,ImageDraw
         item=gallery.items[key];im=decode_image(item['path'].read_bytes())
@@ -103,7 +103,8 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
             if not path.is_file():raise HTTPException(503,'Sampling source missing from demo checkout')
             spec=importlib.util.spec_from_file_location('demo_sampler',path)
             sampler=importlib.util.module_from_spec(spec);spec.loader.exec_module(sampler)
-            regions=sampler.sample_regions(640,640,boxes,seed=seed,object_probability=0,
+            if case_id==8:regions=sampler.sample_coverage_regions(640,640,boxes,seed=seed)
+            else:regions=sampler.sample_regions(640,640,boxes,seed=seed,object_probability=0,
                 stratified_pair=case_id==6)
             for r in regions:
                 color='#fbbf24' if r['guided'] else '#2dd4bf'

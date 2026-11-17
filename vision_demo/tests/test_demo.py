@@ -104,7 +104,7 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
         np.testing.assert_array_equal(np.asarray(raw),np.asarray(decode_image(r.content)))
 
     async def test_sampling_is_real_annotation_based_not_inference(self):
-        for case in (0,1,3,6):
+        for case in (0,1,3,6,8):
             r=await self.client.get(f'/api/examples/{self.key}/sampling?case_id={case}&seed=42')
             self.assertEqual(r.status_code,200,r.text[:100] if r.status_code!=200 else '')
             self.assertEqual(decode_image(r.content).size,(640,640))

@@ -58,3 +58,63 @@ def decoder_bounds(region, height, width):
     x1 = min(width // 2, (x + size) // 2 + 2)
     y1 = min(height // 2, (y + size) // 2 + 2)
     return x0, y0, x1, y1, x - 2*x0, y - 2*y0
+
+
+def sample_coverage_regions(height, width, boxes, count=2, core=192, halo=32,
+                            alignment=16, seed=42, candidates=8):
+    """S8: SAME S6 anchor/uniform draws, geometric selection before decoding.
+
+    Lexicographic objective: maximize selected visible GT box fraction in L1
+    core, then minimize overlap with the unchanged uniform core. The original
+    S6 crop is always a candidate, so anchor coverage cannot decrease. This is
+    not an unbiased dense-loss estimator or a full-object-containment guarantee.
+    """
+    if not isinstance(candidates,int) or isinstance(candidates,bool) or candidates<2:
+        raise ValueError('S8 needs at least two candidate locations')
+    valid=[]
+    for box in boxes:
+        if len(box)!=4 or not all(math.isfinite(float(v)) for v in box):
+            raise ValueError('Boxes must contain four finite coordinates')
+        x1,y1,x2,y2=map(float,box)
+        # Native augmented boxes are clipped already. Defensively exclude
+        # nonvisible objects without changing legacy S0-S6 sampling behavior.
+        x1,y1=max(0.,x1),max(0.,y1)
+        x2,y2=min(float(width),x2),min(float(height),y2)
+        if x2>x1 and y2>y1:valid.append((x1,y1,x2,y2))
+    pair=sample_regions(height,width,valid,count=count,core=core,halo=halo,
+                        alignment=alignment,seed=seed,stratified_pair=True)
+    if not valid:return pair
+    # In S6 the first random operation is uniformly selecting an anchor box.
+    anchor=random.Random(seed).choice(valid)
+    original,uniform=pair
+    base=(original['x']+original['core_x'],original['y']+original['core_y'])
+    ul,ut=uniform['x']+uniform['core_x'],uniform['y']+uniform['core_y']
+    x1,y1,x2,y2=anchor;area=(x2-x1)*(y2-y1)
+    rng=random.Random(seed+17000021)  # Does not perturb S6 uniform/degradation RNG.
+
+    def origin(cx,cy):
+        return (max(0,min(round((cx-core/2)/alignment)*alignment,width-core)),
+                max(0,min(round((cy-core/2)/alignment)*alignment,height-core)))
+
+    locations=[base,origin((x1+x2)/2,(y1+y2)/2)]
+    for _ in range(candidates-2):
+        locations.append(origin((x1+x2)/2+rng.uniform(-core/4,core/4),
+                                (y1+y2)/2+rng.uniform(-core/4,core/4)))
+    locations=list(dict.fromkeys(locations))
+
+    def score(location):
+        left,top=location
+        covered=max(0.,min(left+core,x2)-max(left,x1))*max(0.,min(top+core,y2)-max(top,y1))
+        overlap=max(0,min(left+core,ul+core)-max(left,ul))*max(0,min(top+core,ut+core)-max(top,ut))
+        return covered,-overlap
+
+    left,top=max(locations,key=score)
+    outer=core+2*halo
+    x,y=max(0,min(left-halo,width-outer)),max(0,min(top-halo,height-outer))
+    selected,baseline=score((left,top)),score(base)
+    pair[0]=dict(x=x,y=y,size=outer,core_x=left-x,core_y=top-y,core=core,guided=True,
+        anchor_box=list(anchor),anchor_coverage=selected[0]/area,
+        baseline_anchor_coverage=baseline[0]/area,core_overlap_fraction=-selected[1]/core**2,
+        baseline_core_overlap_fraction=-baseline[1]/core**2,
+        candidates_scored=len(locations),candidate_budget=candidates,policy='coverage_then_overlap')
+    return pair
