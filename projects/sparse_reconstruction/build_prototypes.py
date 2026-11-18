@@ -59,7 +59,11 @@ def build(config):
         module.init_weights()
         module.load_state_dict({k[len(prefix):]: v for k, v in state.items()
                                 if k.startswith(prefix)}, strict=True)
-        module.cuda().eval().requires_grad_(False)
+        # Native BaseBackbone/BaseYOLONeck.train() return None, so eval()
+        # is not chainable even though it correctly sets evaluation mode.
+        module.cuda()
+        module.eval()
+        module.requires_grad_(False)
     preprocessor.cuda().eval()
     del saved, state
     dataset = DATASETS.build(copy.deepcopy(config.train_dataloader.dataset))
