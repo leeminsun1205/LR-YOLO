@@ -68,6 +68,24 @@ def numerical_checks():
     chosen, _ = bounded_rois(packed,1,640,640,2,19,42,0)
     assert len(chosen) == 8 and random.getstate() == state
     torch.testing.assert_close(packed,original,rtol=0,atol=0)
+    # v2: an unreliable class is neither an auxiliary target nor a negative.
+    p = torch.tensor([[[1.,0.]], [[-1.,0.]], [[0.,1.]]], device='cuda')
+    mask = torch.ones((3,1), dtype=torch.bool, device='cuda')
+    m = torch.tensor([.1,.1,0.], device='cuda')
+    reliability = torch.tensor([1.,1.,0.], device='cuda')
+    vector = torch.tensor([[.1,1.]], device='cuda', requires_grad=True)
+    embedding = F.normalize(vector,dim=1)
+    active, _ = margin_objective(embedding,valid,roi,label,p,mask,m,1)
+    gated, _ = margin_objective(embedding,valid,roi,label,p,mask,m,1,reliability)
+    assert active > 0 and gated == 0
+    inactive_label = label.new_full((1,),2)
+    bad_vector = torch.tensor([[1.,.1]],device='cuda',requires_grad=True)
+    bad_embedding = F.normalize(bad_vector,dim=1)
+    ungated, _ = margin_objective(bad_embedding,valid,roi,inactive_label,p,mask,m,1)
+    ignored, _ = margin_objective(bad_embedding,valid,roi,inactive_label,p,mask,m,1,reliability)
+    assert ungated > 0
+    assert ignored == 0
+    torch.testing.assert_close(torch.autograd.grad(ignored,bad_vector)[0],torch.zeros_like(bad_vector))
 
 
 def audit_extra(cfg):
@@ -98,23 +116,25 @@ def audit_extra(cfg):
     rois, labels = rois.cuda(), labels.cuda()
     vectors, valid = pool_embeddings(p3, rois)
     objective, _ = margin_objective(vectors, valid, rois, labels, model.prototype_vectors,
-                                    model.prototype_modes, model.prototype_margins, 1)
+                                    model.prototype_modes, model.prototype_margins, 1, model.prototype_reliability)
     controlled = False
     if objective.detach().item() == 0:
         # A fully satisfied real batch legitimately has zero hinge. Force an
         # incorrect label ONLY for this derivative probe, never for training.
         similarity = torch.einsum('nd,ckd->nck', vectors.detach(), model.prototype_vectors)
-        best = similarity.masked_fill(~model.prototype_modes[None], -torch.inf).max(2).values.argmax(1)
-        labels = (best + 1) % len(model.prototype_vectors)
+        scores = similarity.masked_fill(~model.prototype_modes[None], -torch.inf).max(2).values
+        trusted = torch.nonzero(model.prototype_reliability > 0).flatten()
+        best = scores[:,trusted].argmax(1)
+        labels = trusted[(best+1) % len(trusted)]
         objective, _ = margin_objective(vectors, valid, rois, labels, model.prototype_vectors,
-                                        model.prototype_modes, model.prototype_margins, 1)
+                                        model.prototype_modes, model.prototype_margins, 1, model.prototype_reliability)
         controlled = True
     parameter = next(p for p in model.backbone.parameters() if p.requires_grad)
     gradient = torch.autograd.grad(objective, parameter)[0]
     if not torch.isfinite(gradient).all() or not gradient.abs().sum().item():
         raise AssertionError('Missing/nonfinite memory-only encoder gradient')
     if any(getattr(model, name).requires_grad for name in
-           ('prototype_vectors', 'prototype_modes', 'prototype_margins')):
+           ('prototype_vectors', 'prototype_modes', 'prototype_margins', 'prototype_reliability')):
         raise AssertionError('Memory must be constant')
     del p3, vectors, valid, objective, gradient
     # SAME model/state/RNG, S8 loss versus S9 at lambda=0, one SGD update each.
@@ -155,6 +175,10 @@ def audit_extra(cfg):
     report.update(prototype_memory_gradient=True, memory_gradient_controlled_labels=controlled,
         zero_weight_S8_losses_and_SGD_update_match=True, inference_independent_of_bank=True,
         cache_native_source_features_match=True, roi_margin_empty_border_fixtures_passed=True,
+        prototype_reliability_checks_passed=True,
+        prototype_method_version=model.prototype_metadata['version'],
+        prototype_semantic_status=model.prototype_metadata['quality']['status'],
+        inactive_auxiliary_classes=model.prototype_metadata['quality']['inactive_auxiliary_classes'],
         prototype_checks_passed=False)
     path.write_text(json.dumps(report, indent=2)+'\n')
 

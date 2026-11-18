@@ -2,11 +2,25 @@
 import hashlib
 import json
 import random
+import copy
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 
-VERSION = 'clean-prototype-margin-v1'
+LEGACY_VERSION = 'clean-prototype-margin-v1'
+VERSION = 'clean-prototype-margin-v2-reliability'
+USABLE_STATUSES = ('passed', 'usable_partial')
+QUALITY_POLICY = dict(name='source_gap_reliability_v2', gap_scale=.1,
+    minimum_reliable_classes=2, exclude_unreliable_negatives=True,
+    minimum_fit=32, minimum_audit=16, minimum_audit_images=8)
+# Known notebook78ea implementation; pooling/clustering are unchanged.
+# Unknown or edited v1 implementations are NOT silently upgraded.
+LEGACY_MODULE_HASHES = {
+    'prototype_bank.py': '9cb5f3379e768a92cae78915d5aa00e7b7c779a5f665bfefcf5a0079c2cef578',
+    'prototype_memory.py': '3687ecfdd5eebd3dd5f7fad9ef0a62745ccc36bc2b4bb28b4a8c1930adf1b804',
+    'build_prototypes.py': '45a837f2437a3797d7772ab8a25354858a27dfce19a7c820bcdeba892e798478'}
 POOLING = dict(level=0, stride=8, output_size=3, sampling_ratio=2, aligned=True,
                spatial_reduce='mean', normalization='l2', eps=1e-8)
 
@@ -97,15 +111,12 @@ def fit_bank(fit, audit, classes):
         p, mask, detail = fit_modes(np.stack([v for v, _ in reservoir.items]))
         centers.append(p); masks.append(mask); modes.append(detail)
     centers, masks = np.stack(centers), np.stack(masks)
-    diagnostics, margins, failures = {}, [], []
+    diagnostics = {}
     for label, (name, reservoir) in enumerate(zip(classes, audit)):
         items = reservoir.items
         images = len({image for _, image in items})
-        if len(items) < 16 or images < 8:
-            failures.append(f'{name}: audit needs >=16 objects / >=8 images; got {len(items)} / {images}')
         if not items:
             diagnostics[name] = dict(objects=0, images=images)
-            margins.append(0.)
             continue
         x = np.stack([v for v, _ in items])
         similarity = np.einsum('nd,ckd->nck', x, centers)
@@ -115,25 +126,66 @@ def fit_bank(fit, audit, classes):
         accuracy = float((scores.argmax(1) == label).mean())
         scores[:, label] = -np.inf
         gaps = positive - scores.max(1)
-        median = float(np.median(gaps))
-        if median <= 0 or not np.isfinite(median):
-            failures.append(f'{name}: non-positive/nonfinite median clean gap ({median})')
-        margins.append(max(0., min(.1, .5 * median)))
         diagnostics[name] = dict(objects=len(items), images=images,
             accuracy=accuracy, gap_quantiles=np.quantile(gaps, [0,.25,.5,.75,1]).tolist(),
             positive_mode_usage=np.bincount(similarity[:, label].argmax(1), minlength=2).tolist(),
             fit_seen=fit[label].seen, audit_seen=reservoir.seen, modes=modes[label])
     flat = centers.reshape(-1, centers.shape[-1])
-    return dict(prototypes=centers, valid=masks, margins=np.asarray(margins, np.float32)), dict(
-        status='rejected' if failures else 'passed', failures=failures, classes=diagnostics,
-        balanced_accuracy=float(np.mean([d.get('accuracy', 0.) for d in diagnostics.values()])),
-        mode_cosines=(flat @ flat.T).tolist())
+    margins, reliability, quality = calibrate_quality(diagnostics, classes)
+    quality['mode_cosines'] = (flat @ flat.T).tolist()
+    return dict(prototypes=centers, valid=masks, margins=margins, reliability=reliability), quality
+
+
+def calibrate_quality(diagnostics, classes):
+    """Separate invalid data from weak semantic priors; never fabricate a gap.
+
+    v2 is a method revision: weak classes keep ALL native detection GT/losses,
+    but supply neither prototype targets nor prototype negatives.
+    """
+    if len(classes) < 2 or len(set(classes)) != len(classes):
+        raise ValueError('Prototype classes must contain at least two distinct labels')
+    margins = np.zeros(len(classes), np.float32)
+    reliability = np.zeros(len(classes), np.float32)
+    failures, warnings, reliable, inactive = [], [], [], []
+    for label, name in enumerate(classes):
+        row = diagnostics.get(name, {})
+        if (row.get('fit_seen', 0) < 32 or sum(row.get('modes', {}).get('counts', [])) < 32):
+            failures.append(f'{name}: insufficient fit support')
+        if row.get('objects', 0) < 16 or row.get('images', 0) < 8:
+            failures.append(f'{name}: audit needs >=16 objects / >=8 images')
+        gaps = np.asarray(row.get('gap_quantiles', []), dtype=np.float64)
+        if gaps.shape != (5,) or not np.isfinite(gaps).all():
+            failures.append(f'{name}: nonfinite/missing clean gap statistics')
+            inactive.append(name)
+            continue
+        median = float(gaps[2])
+        if median <= 0:
+            warnings.append(f'{name}: median clean gap {median}; auxiliary prototype weight=0')
+            inactive.append(name)
+        else:
+            margins[label] = min(.1, .5 * median)
+            reliability[label] = min(1., median / QUALITY_POLICY['gap_scale'])
+            if margins[label] > 0 and reliability[label] > 0:
+                reliable.append(name)
+            else:
+                margins[label] = reliability[label] = 0
+                inactive.append(name)
+                failures.append(f'{name}: positive gap is not representable in FP32')
+    if len(reliable) < QUALITY_POLICY['minimum_reliable_classes']:
+        failures.append('Need at least two reliable classes for an inter-class prototype objective')
+    status = 'rejected' if failures else ('usable_partial' if inactive else 'passed')
+    return margins, reliability, dict(status=status, failures=failures, warnings=warnings,
+        separation_status='partial' if inactive else 'complete', classes=copy.deepcopy(diagnostics),
+        reliable_classes=reliable, inactive_auxiliary_classes=inactive,
+        reliability={name:float(reliability[i]) for i,name in enumerate(classes)},
+        balanced_accuracy=float(np.mean([diagnostics.get(n,{}).get('accuracy',0.) for n in classes])),
+        policy=QUALITY_POLICY)
 
 
 def load_bank(directory, expected_identity=None):
     directory = Path(directory)
     metadata = json.loads((directory / 'metadata.json').read_text())
-    if metadata.get('version') != VERSION or metadata.get('quality', {}).get('status') != 'passed':
+    if metadata.get('version') != VERSION or metadata.get('quality', {}).get('status') not in USABLE_STATUSES:
         raise ValueError('Prototype cache version/quality failed; inspect metadata.json')
     identity = metadata['identity']
     if metadata.get('identity_sha256') != identity_hash(identity):
@@ -143,14 +195,75 @@ def load_bank(directory, expected_identity=None):
     if sha256(directory / 'bank.npz') != metadata['bank_sha256']:
         raise ValueError('Prototype bank hash mismatch')
     with np.load(directory / 'bank.npz', allow_pickle=False) as archive:
-        arrays = {key: archive[key].copy() for key in ('prototypes', 'valid', 'margins')}
+        arrays = {key: archive[key].copy() for key in ('prototypes', 'valid', 'margins', 'reliability')}
     p, valid, margin = arrays['prototypes'], arrays['valid'], arrays['margins']
     classes = identity['classes']
+    weight = arrays['reliability']
     if (p.ndim != 3 or p.shape[:2] != (len(classes), 2) or p.dtype != np.float32
             or valid.shape != p.shape[:2] or valid.dtype != np.bool_
             or margin.shape != (len(classes),) or margin.dtype != np.float32
             or not valid.any(1).all() or not np.isfinite(p).all()
-            or not np.isfinite(margin).all() or (margin <= 0).any() or (margin > .100001).any()
+            or not np.isfinite(margin).all() or (margin < 0).any() or (margin > .100001).any()
+            or weight.shape != (len(classes),) or weight.dtype != np.float32
+            or not np.isfinite(weight).all() or (weight < 0).any() or (weight > 1).any()
+            or (weight > 0).sum() < 2 or not np.array_equal(weight > 0, margin > 0)
             or not np.allclose(np.linalg.norm(p[valid], axis=1), 1., atol=1e-5)):
         raise ValueError('Invalid prototype shapes, modes, margins or normalization')
+    expected_margin, expected_weight, expected_quality = calibrate_quality(metadata['quality']['classes'], classes)
+    if (any(metadata['quality'].get(key) != expected_quality[key] for key in
+            ('policy','status','reliable_classes','inactive_auxiliary_classes','separation_status','reliability'))
+            or expected_quality['status'] not in USABLE_STATUSES
+            or not np.array_equal(expected_margin, margin) or not np.array_equal(expected_weight, weight)):
+        raise ValueError('Prototype reliability/margins do not match measured source diagnostics')
     return arrays, metadata
+
+
+def legacy_identity_matches(identity, expected):
+    ignored = {'version', 'module_sha256', 'quality_policy'}
+    return (identity.get('version') == LEGACY_VERSION
+        and identity.get('module_sha256') == LEGACY_MODULE_HASHES
+        and identity_hash({k:v for k,v in identity.items() if k not in ignored}) ==
+            identity_hash({k:v for k,v in expected.items() if k not in ignored}))
+
+
+def upgrade_legacy_cache(source, destination, identity):
+    """Reuse known v1 source features; write a NEW v2 artifact, never edit v1."""
+    source, destination = Path(source), Path(destination)
+    started = time.perf_counter()
+    metadata = json.loads((source/'metadata.json').read_text())
+    if (metadata.get('version') != LEGACY_VERSION
+            or not legacy_identity_matches(metadata.get('identity',{}), identity)
+            or metadata.get('identity_sha256') != identity_hash(metadata['identity'])
+            or metadata.get('source_feature_equality') is not True
+            or metadata.get('bank_sha256') != sha256(source/'bank.npz')):
+        raise ValueError('Cannot reuse unverified or incompatible v1 prototype cache')
+    with np.load(source/'bank.npz', allow_pickle=False) as archive:
+        arrays = {key:archive[key].copy() for key in ('prototypes','valid','margins')}
+    old_quality = metadata['quality']
+    legacy_bank_sha = metadata['bank_sha256']
+    margins, weights, quality = calibrate_quality(old_quality.get('classes',{}), identity['classes'])
+    if quality['status'] not in USABLE_STATUSES:
+        raise ValueError('Legacy cache is structurally unusable: '+repr(quality['failures']))
+    quality['mode_cosines'] = old_quality.get('mode_cosines', [])
+    # Validate inherited prototype tensor geometry BEFORE writing the new cache.
+    p, valid = arrays['prototypes'], arrays['valid']
+    if (p.ndim != 3 or p.shape[:2] != (len(identity['classes']),2) or p.dtype != np.float32
+            or valid.shape != p.shape[:2] or valid.dtype != np.bool_ or not valid.any(1).all()
+            or not np.isfinite(p).all() or not np.allclose(np.linalg.norm(p[valid],axis=1),1.,atol=1e-5)):
+        raise ValueError('Legacy prototype vectors/modes are invalid')
+    if destination.exists() and any(destination.iterdir()):
+        raise FileExistsError('Preserve existing destination cache: '+str(destination))
+    destination.mkdir(parents=True, exist_ok=True)
+    arrays.update(margins=margins, reliability=weights)
+    np.savez(destination/'bank.npz', **arrays)
+    metadata = copy.deepcopy(metadata)
+    metadata.update(version=VERSION, identity=identity, identity_sha256=identity_hash(identity),
+        quality=quality, quality_policy=QUALITY_POLICY, bank_sha256=sha256(destination/'bank.npz'),
+        calibration_created_utc=datetime.now(timezone.utc).isoformat(),
+        calibration_elapsed_seconds=time.perf_counter()-started,
+        migration=dict(source_directory=str(source), source_metadata_sha256=sha256(source/'metadata.json'),
+            source_bank_sha256=legacy_bank_sha,
+            original_version=LEGACY_VERSION, original_quality=old_quality, cached_extraction_reused=True))
+    (destination/'metadata.json').write_text(json.dumps(metadata,indent=2)+'\n')
+    load_bank(destination, identity_hash(identity))
+    return metadata

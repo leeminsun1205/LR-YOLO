@@ -50,25 +50,32 @@ def bounded_rois(packed_cpu, batch_size, height, width, classes, step, seed, ran
     return torch.tensor(rows, dtype=torch.float32).reshape(-1, 5), torch.tensor(labels, dtype=torch.long)
 
 
-def margin_objective(vectors, valid_vectors, rois, labels, prototypes, modes, margins, batch_size):
+def margin_objective(vectors, valid_vectors, rois, labels, prototypes, modes, margins, batch_size,
+                     reliability=None):
     """Per-image mean then local-batch mean, including empty images as zero."""
     if not len(vectors):
         zero = vectors.sum() * 0.
-        return zero, dict(prototype_active_fraction=zero.detach(), prototype_gap=zero.detach())
+        return zero, dict(prototype_active_fraction=zero.detach(), prototype_gap=zero.detach(),
+                          prototype_supervised_fraction=zero.detach())
+    if reliability is None:
+        reliability = margins.new_ones(len(prototypes))
     similarity = torch.einsum('nd,ckd->nck', vectors, prototypes)
     similarity = similarity.masked_fill(~modes[None], -torch.inf).max(2).values
     positive = similarity.gather(1, labels[:, None]).squeeze(1)
-    negative = similarity.masked_fill(F.one_hot(labels, prototypes.shape[0]).bool(), -torch.inf).max(1).values
+    negative_mask = F.one_hot(labels, prototypes.shape[0]).bool() | (reliability <= 0)[None]
+    negative = similarity.masked_fill(negative_mask, -torch.inf).max(1).values
     gap = positive - negative
-    terms = F.relu(margins[labels] - gap) * valid_vectors.to(gap.dtype)
+    eligible = valid_vectors & (reliability[labels] > 0)
+    terms = F.relu(margins[labels] - gap) * valid_vectors.to(gap.dtype) * reliability[labels]
     images = rois[:, 0].long()
     sums = terms.new_zeros(batch_size).scatter_add(0, images, terms)
     counts = terms.new_zeros(batch_size).scatter_add(0, images, valid_vectors.to(terms.dtype))
     loss = (sums / counts.clamp_min(1)).mean()
     denominator = valid_vectors.sum().clamp_min(1)
     return loss, dict(
-        prototype_active_fraction=((terms > 0) & valid_vectors).sum().detach() / denominator,
-        prototype_gap=(gap * valid_vectors).sum().detach() / denominator)
+        prototype_active_fraction=((terms > 0) & eligible).sum().detach() / denominator,
+        prototype_supervised_fraction=eligible.sum().detach() / denominator,
+        prototype_gap=(gap * eligible).sum().detach() / eligible.sum().clamp_min(1))
 
 
 @MODELS.register_module()
@@ -80,14 +87,14 @@ class PrototypeMemorySelectiveDetector(SelectiveReconstructionDetector):
             raise ValueError('S9 must preserve S8 sampling')
         if (not math.isfinite(prototype_weight) or not 0 <= prototype_weight <= 1
                 or prototype_warmup_updates < 1 or prototype_cap != 8):
-            raise ValueError('S9 v1 uses weight [0,1], positive warmup and cap=8')
+            raise ValueError('S9 uses weight [0,1], positive warmup and cap=8')
         kwargs['sparse_case'] = 8
         super().__init__(**kwargs)
         bank, metadata = load_bank(prototype_directory, prototype_identity)
         if metadata['bank_sha256'] != prototype_bank_sha256:
             raise ValueError('Bank content differs from the recorded training contract')
         for name, key in [('prototype_vectors', 'prototypes'), ('prototype_modes', 'valid'),
-                          ('prototype_margins', 'margins')]:
+                          ('prototype_margins', 'margins'), ('prototype_reliability','reliability')]:
             self.register_buffer(name, torch.from_numpy(bank[key]), persistent=False)
         self.prototype_metadata = metadata
         self.prototype_weight = float(prototype_weight)
@@ -105,10 +112,11 @@ class PrototypeMemorySelectiveDetector(SelectiveReconstructionDetector):
         rois, labels = rois.to(p3.device), labels.to(p3.device)
         if not len(rois):
             zero = p3.sum() * 0.
-            return zero, dict(prototype_active_fraction=zero.detach(), prototype_gap=zero.detach())
+            return zero, dict(prototype_active_fraction=zero.detach(), prototype_gap=zero.detach(),
+                              prototype_supervised_fraction=zero.detach())
         vectors, valid = pool_embeddings(p3, rois)
         return margin_objective(vectors, valid, rois, labels, self.prototype_vectors,
-            self.prototype_modes, self.prototype_margins, len(p3))
+            self.prototype_modes, self.prototype_margins, len(p3), self.prototype_reliability)
 
     def loss(self, batch_inputs, batch_gts, batch_data_samples):
         # Exact S8 branch at weight zero, including loss keys, RNG and updates.

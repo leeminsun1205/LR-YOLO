@@ -14,8 +14,8 @@ from mmyolo.datasets.utils import yolov5_collate
 from mmyolo.registry import DATASETS, MODELS
 from mmyolo.utils import register_all_modules
 
-from .prototype_bank import (POOLING, VERSION, Reservoir, fit_bank, identity_hash,
-                             load_bank, role, sha256)
+from .prototype_bank import (POOLING, VERSION, QUALITY_POLICY, USABLE_STATUSES,
+                             Reservoir, fit_bank, identity_hash, load_bank, role, sha256)
 from .prototype_memory import pool_embeddings
 
 
@@ -131,7 +131,7 @@ def build(config):
     except ValueError as exc:
         arrays, quality = None, dict(status='rejected', failures=[str(exc)])
     metadata = dict(version=VERSION, identity=identity, identity_sha256=expected,
-        pooling=POOLING, quality=quality, source_feature_equality=feature_equality,
+        pooling=POOLING, quality=quality, quality_policy=QUALITY_POLICY, source_feature_equality=feature_equality,
         clustering=dict(max_modes=2, iterations=20, minimum_cluster=8,
                         fit_capacity=256, audit_capacity=64, minimum_fit=32,
                         minimum_audit=16, minimum_audit_images=8,
@@ -152,10 +152,12 @@ def build(config):
         np.savez(destination/'bank.npz', **arrays)
         metadata['bank_sha256'] = sha256(destination/'bank.npz')
     (destination/'metadata.json').write_text(json.dumps(metadata, indent=2)+'\n')
-    if quality['status'] != 'passed':
+    if quality['status'] not in USABLE_STATUSES:
         raise ValueError('Clean prototype quality rejected: '+repr(quality['failures']))
     load_bank(destination, expected)
-    print('Prototype quality passed:', destination, flush=True)
+    print('Prototype bank:', quality['status'], destination, flush=True)
+    print('Inactive auxiliary classes (native detection unchanged):',
+          quality['inactive_auxiliary_classes'], flush=True)
 
 
 def main():

@@ -9,7 +9,7 @@ from mmyolo.registry import HOOKS
 
 from .hooks import model_of
 
-BANK_BUFFERS = ('prototype_vectors', 'prototype_modes', 'prototype_margins')
+BANK_BUFFERS = ('prototype_vectors', 'prototype_modes', 'prototype_margins', 'prototype_reliability')
 
 
 @HOOKS.register_module()
@@ -44,6 +44,8 @@ class PrototypeIntegrityHook(Hook):
             sampling_step=model.sampling_step, warmup_updates=model.prototype_warmup_updates,
             identity_sha256=model.prototype_metadata['identity_sha256'],
             bank_sha256=model.prototype_metadata['bank_sha256'], auxiliary_trainable_parameters=0,
+            semantic_status=model.prototype_metadata['quality']['status'],
+            inactive_auxiliary_classes=model.prototype_metadata['quality']['inactive_auxiliary_classes'],
             trainable_parameters=sum(p.numel() for p in model.parameters() if p.requires_grad),
             total_parameters_including_frozen_lpips=sum(p.numel() for p in model.parameters()),
             bank_payload_bytes=sum(getattr(model,n).numel()*getattr(model,n).element_size()
