@@ -1,5 +1,6 @@
 """Run: uvicorn vision_demo.server.app:app --workers 1 (registry paths via environment)."""
 import io
+import asyncio
 from contextlib import asynccontextmanager
 import json
 import os
@@ -29,8 +30,19 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
     pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='inference')
     @asynccontextmanager
     async def lifespan(app):
-        yield
-        pool.shutdown(wait=False,cancel_futures=True)
+        try:
+            keys=json.loads(os.getenv('LRYOLO_PRELOAD','[]'))
+            if not isinstance(keys,list) or any(k not in registry or not registry[k]['available'] for k in keys):
+                raise ValueError('Preload requires available registered model IDs')
+            for key in keys:
+                print('Preloading and warming:',registry[key]['label'],flush=True)
+                item=next((v for v in gallery.items.values() if v['degradation']==registry[key]['degradation']),None)
+                if item is None:raise ValueError('Missing gallery image for model warmup')
+                warm_image=decode_image(item['path'].read_bytes())
+                await asyncio.get_running_loop().run_in_executor(pool,engine.predict,key,warm_image)
+            yield
+        finally:
+            pool.shutdown(wait=False,cancel_futures=True)
     app=FastAPI(title='LR-YOLO Vision Lab',docs_url='/api/docs',lifespan=lifespan)
     jobs={}; lock=threading.Lock()
 
@@ -71,8 +83,8 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
     def methods(): return [method_info(case) for case in METHODS]
 
     @app.get('/api/examples/random')
-    def random_example(degradation:str='low_light'):
-        try: return gallery.choose(degradation)
+    def random_example(degradation:str='low_light',pool:str='voc'):
+        try: return gallery.choose(degradation,pool)
         except ValueError as exc: raise HTTPException(404,str(exc))
 
     @app.get('/api/examples/{key}')

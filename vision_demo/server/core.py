@@ -12,6 +12,9 @@ CLASSES = {
     'low_light': ('person','car','bus','bicycle','motorbike','boat','bottle','chair','dog','cat'),
     'haze': ('person','car','bus','bicycle','motorbike'),
 }
+ANNOTATION_ALIASES = dict(zip(
+    ('People','Car','Bus','Bicycle','Motorbike','Boat','Bottle','Chair','Dog','Cat'),
+    CLASSES['low_light']))
 
 
 def digest(path):
@@ -55,21 +58,29 @@ class Gallery:
             ids=manifest.read_text().split()
             if len(ids)!=len(set(ids)): raise ValueError('Duplicate manifest IDs')
             for ident in ids:
-                if not re.fullmatch(r'[A-Za-z0-9_-]+',ident): raise ValueError('Invalid VOC ID')
-                image=folder/'JPEGImages'/f'{ident}.jpg'
+                if not re.fullmatch(r'[A-Za-z0-9_-]+(?:\.(?i:jpg|jpeg|png|bmp))?',ident): raise ValueError('Invalid VOC ID')
+                image=folder/'JPEGImages'/(ident if Path(ident).suffix else f'{ident}.jpg')
                 xml=folder/'Annotations'/f'{ident}.xml'
+                if not xml.is_file():
+                    alternatives=[folder/'Annotations'/f'{ident}.jpg.xml',
+                                  folder/'Annotations'/f'{Path(ident).stem}.xml']
+                    xml=next((p for p in alternatives if p.is_file()),xml)
+                if not image.is_file() and xml.is_file():
+                    filename=ET.parse(xml).getroot().findtext('filename')
+                    if filename:image=folder/'JPEGImages'/Path(filename).name
                 if not image.is_file(): raise FileNotFoundError(image)
                 key=f'{family}_{spec["id"]}_{ident}'
                 if key in self.items: raise ValueError('Duplicate gallery key')
                 self.items[key]=dict(id=key,image_id=ident,path=image,xml=xml,
                     degradation=family,source=spec.get('source','VOC'),split=spec['split'],
+                    pool=spec.get('pool','voc'),
                     already_degraded=bool(spec.get('already_degraded',False)))
 
     def public(self,item):
         return {k:v for k,v in item.items() if k not in ('path','xml')}
 
-    def choose(self,family):
-        pool=[v for v in self.items.values() if v['degradation']==family]
+    def choose(self,family,source_pool='voc'):
+        pool=[v for v in self.items.values() if v['degradation']==family and v['pool']==source_pool]
         if not pool: raise ValueError('Chưa có gallery cho degradation này')
         return self.public(random.SystemRandom().choice(pool))
 
@@ -81,6 +92,7 @@ class Gallery:
         result=[]
         for obj in root.findall('object'):
             label=obj.findtext('name')
+            label=ANNOTATION_ALIASES.get(label,label)
             if label not in CLASSES[item['degradation']]: continue
             b=obj.find('bndbox')
             if b is None: continue

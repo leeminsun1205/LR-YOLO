@@ -475,6 +475,8 @@ def dataset_spec(root, manifest, prefix, domain, class_names=None):
             image = candidates[0]
         objects = tree.findall('object')
         unknown = {o.findtext('name') for o in objects} - set(classes)
+        if domain == 'exdark':
+            unknown -= {'Cup','Table'}  # Native ExDark classes outside the released ten-class task.
         if domain in ('train', 'voc') or class_names is not None:
             unknown -= set(VOC_CLASSES) | VOC_EXTRA_CLASSES
         if unknown:

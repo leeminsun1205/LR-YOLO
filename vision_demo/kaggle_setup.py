@@ -45,9 +45,14 @@ def prepare_gallery(family,cache,auto_download=True,overrides=None,pool='clean_v
     elif pool=='fixed_test':
         spec=prepare_final(overrides or {},cache,'voc',degradation=family,auto_download=auto_download)
         degraded=True;source='VOC_Dark_Val' if family=='low_light' else 'VOC_Haze_Val'
-    else:raise ValueError('Gallery pool must be clean_val or fixed_test')
+    elif pool=='real_test':
+        domain='exdark' if family=='low_light' else 'rtts'
+        spec=prepare_final(overrides or {},cache,domain,degradation=family,auto_download=auto_download)
+        degraded=True;source='ExDark' if family=='low_light' else 'RTTS'
+    else:raise ValueError('Gallery pool must be clean_val, fixed_test or real_test')
     return dict(id=f'{family}_{pool}',root=spec['root'],prefix=spec['prefix'],manifest=spec['manifest'],
-                degradation=family,split=pool,source=source,already_degraded=degraded)
+                degradation=family,split=pool,source=source,already_degraded=degraded,
+                pool='real' if pool=='real_test' else 'voc')
 
 
 def configure_ngrok(ngrok, secrets_client=None, token=None):

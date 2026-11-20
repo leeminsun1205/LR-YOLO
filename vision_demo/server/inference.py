@@ -48,19 +48,28 @@ def serving_pipeline(pipeline):
 class Engine:
     def __init__(self,registry,device='cuda:0'):
         self.registry=registry; self.device=device; self.model=None; self.key=None; self.metadata={}
+        self.cache={}  # At most two models; inactive models stay in CPU RAM.
 
     def load(self,key):
         if key==self.key: return 0.
         import torch
+        start=time.perf_counter()
+        if self.model is not None:
+            self.model.to('cpu')
+        self.model=None; self.key=None; gc.collect(); torch.cuda.empty_cache()
+        if key in self.cache:
+            model,pipeline=self.cache[key]
+            model.to(self.device);model.eval()
+            self.model=model;self.pipeline=pipeline;self.key=key
+            return time.perf_counter()-start
         from mmengine.config import Config
         from mmcv.transforms import Compose
         from mmyolo.registry import MODELS
         from mmyolo.utils import register_all_modules
         from bdd100k_workflow import load_torch_checkpoint
-        start=time.perf_counter(); entry=self.registry[key]
+        entry=self.registry[key]
         if not entry['available']: raise ValueError('Checkpoint/config chưa được attach')
         if not torch.cuda.is_available(): raise ValueError('Demo inference cần GPU Kaggle')
-        self.model=None; self.key=None; gc.collect(); torch.cuda.empty_cache()
         sha=digest(entry['checkpoint'])
         if entry.get('sha256') and sha!=entry['sha256']: raise ValueError('Checkpoint hash mismatch')
         saved=load_torch_checkpoint(entry['checkpoint']); meta=saved.get('meta',{})
@@ -90,6 +99,9 @@ class Engine:
         model.cfg=cfg; model.dataset_meta={'classes':entry['classes']}
         self.pipeline=Compose(serving_pipeline(cfg.test_dataloader.dataset.pipeline))
         self.model=model; self.key=key
+        self.cache[key]=(model,self.pipeline)
+        while len(self.cache)>2:
+            del self.cache[next(k for k in self.cache if k!=key)]
         self.metadata[key]=dict(checkpoint_sha256=sha,checkpoint_epoch=meta.get('epoch'),
             origin=entry.get('origin','self_trained'),stage=entry['stage'],case_id=entry['case_id'],architecture=entry['architecture'],
             degradation=entry['degradation'],provenance_verified=bool(sparse),

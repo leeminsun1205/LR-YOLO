@@ -164,7 +164,7 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(export['degradation']['beta'],.10)
             self.assertNotIn('ap50',export)
 
-    async def test_demo_notebook_enables_both_galleries_and_four_original_models(self):
+    async def test_demo_notebook_enables_real_galleries_and_only_two_original_v8_models(self):
         import ast
         builder=Path(__file__).resolve().parents[2]/'notebooks/demo/build_notebook.py'
         constants=[n.value for n in ast.walk(ast.parse(builder.read_text()))
@@ -173,10 +173,80 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
         assignments={n.targets[0].id:ast.literal_eval(n.value)
                      for n in ast.parse(source).body if isinstance(n,ast.Assign)
                      and isinstance(n.targets[0],ast.Name)
-                     and n.targets[0].id in ('GALLERY_FAMILIES','AUTHOR_RELEASES')}
+                     and n.targets[0].id in ('GALLERY_FAMILIES','AUTHOR_RELEASES','MODELS',
+                                            'DOWNLOAD_REAL_GALLERIES','PRELOAD_MODELS')}
         self.assertEqual(assignments['GALLERY_FAMILIES'],['low_light','haze'])
         self.assertEqual(set(assignments['AUTHOR_RELEASES']),
-                         {'voc_dark_v8','voc_dark_v10','voc_haze_v8','voc_haze_v10'})
+                         {'voc_dark_v8','voc_haze_v8'})
+        self.assertEqual(assignments['MODELS'],[])
+        self.assertTrue(assignments['DOWNLOAD_REAL_GALLERIES'])
+        self.assertTrue(assignments['PRELOAD_MODELS'])
+
+    async def test_exdark_extensions_aliases_and_separate_random_sources(self):
+        (self.root/'ImageSets/Main/real.txt').write_text('000001.jpg\n')
+        (self.root/'Annotations/000001.jpg.xml').write_text(
+            '<annotation><filename>000001.jpg</filename><object><name>People</name>'
+            '<bndbox><xmin>2</xmin><ymin>3</ymin><xmax>18</xmax><ymax>19</ymax></bndbox>'
+            '</object><object><name>Table</name></object></annotation>')
+        gallery=Gallery([dict(self.spec,id='exdark',manifest='ImageSets/Main/real.txt',
+                             pool='real',source='ExDark',split='real_test',already_degraded=True)])
+        self.gallery.items.update(gallery.items)
+        voc=(await self.client.get('/api/examples/random?degradation=low_light')).json()
+        self.assertEqual(voc['id'],self.key)
+        real=(await self.client.get('/api/examples/random?degradation=low_light&pool=real')).json()
+        self.assertEqual(real['source'],'ExDark')
+        self.assertTrue(real['already_degraded'])
+        detail=(await self.client.get('/api/examples/'+real['id'])).json()
+        self.assertEqual([x['label'] for x in detail['annotations']],['person'])
+        preview=await self.client.post('/api/preview',params=dict(example_id=real['id']))
+        np.testing.assert_array_equal(np.asarray(decode_image(preview.content)),
+                                      np.asarray(decode_image((self.root/'JPEGImages/000001.jpg').read_bytes())))
+
+    async def test_real_gallery_preparation_uses_correct_native_domain(self):
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import Mock,patch
+        from vision_demo.kaggle_setup import prepare_gallery
+        prepare=Mock(return_value=dict(root=str(self.root),prefix='',manifest='ImageSets/Main/val.txt'))
+        protocol=SimpleNamespace(prepare_final=prepare,prepare_training=Mock())
+        with patch.dict(sys.modules,{'selective_protocol_data':protocol}):
+            for family,domain,source in [('low_light','exdark','ExDark'),('haze','rtts','RTTS')]:
+                result=prepare_gallery(family,self.root,pool='real_test')
+                self.assertEqual(result['source'],source)
+                self.assertEqual(result['pool'],'real')
+                self.assertTrue(result['already_degraded'])
+                self.assertEqual(prepare.call_args.args[2],domain)
+                self.assertEqual(prepare.call_args.kwargs['degradation'],family)
+        protocol.prepare_training.assert_not_called()
+
+    async def test_preload_warms_both_families_before_ready(self):
+        from unittest.mock import patch
+        self.gallery.items.update(Gallery([dict(self.spec,id='haze',degradation='haze')]).items)
+        engine=FakeEngine()
+        app=create_app(registry=self.registry,gallery=self.gallery,reports=[],engine=engine,
+                       workdir=self.root/'warmup')
+        with patch.dict('os.environ',{'LRYOLO_PRELOAD':json.dumps(['h','a'])}):
+            async with app.router.lifespan_context(app):
+                self.assertEqual(len(engine.inputs),2)
+
+    async def test_cached_model_switch_offloads_gpu_before_activation(self):
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        from vision_demo.server.inference import Engine
+        events=[]
+        class Module:
+            def __init__(self,name):self.name=name
+            def to(self,device):events.append((self.name,device));return self
+            def eval(self):return None  # Support native modules with nonchainable train/eval.
+        old,new=Module('old'),Module('new')
+        engine=Engine({});engine.model=old;engine.key='old'
+        engine.cache={'old':(old,'old-pipeline'),'new':(new,'new-pipeline')}
+        torch=SimpleNamespace(cuda=SimpleNamespace(empty_cache=lambda:None))
+        with patch.dict(sys.modules,{'torch':torch}):engine.load('new')
+        self.assertEqual(events,[('old','cpu'),('new','cuda:0')])
+        self.assertIs(engine.model,new)
+        self.assertEqual(engine.pipeline,'new-pipeline')
 
     async def test_all_current_methods_serve_native_tensors_without_bank(self):
         from vision_demo.server.inference import serving_model_config

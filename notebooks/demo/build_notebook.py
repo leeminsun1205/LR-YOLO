@@ -47,7 +47,7 @@ print('Demo bundle:',BUNDLE,flush=True)
     cells=[cell('markdown','''
 # LR-YOLO Vision Lab · Kaggle demo
 React + FastAPI + Ngrok. No OpenAI API or training. Default prepares both low-light
-and haze galleries, plus all four author VOC releases (v8/v10 for each family).
+and haze VOC galleries plus ExDark/RTTS, and ONLY the two author v8 releases.
 No self-trained checkpoint required for the original models.
 For your own models, attach checkpoints WITH
 resolved_config.py, provenance.json and session_state.json; attach tested MMCV
@@ -65,16 +65,18 @@ OUTPUT=Path('/kaggle/working/lryolo_demo_runtime');OUTPUT.mkdir(exist_ok=True)
 INSTALL_ENVIRONMENT=True  # Uses known Python3.10.10/Torch2.5.1/MMCV wheel recipe.
 MMCV_WHEEL=None  # Set explicit wheel path if several are attached.
 GALLERY_FAMILIES=['low_light','haze']  # Both random VOC pools; keep one to limit downloads.
-GALLERY_POOL='clean_val'  # Or fixed_test: already degraded, do not darken again.
+GALLERY_POOL='clean_val'  # Preserve random VOC images.
+DOWNLOAD_REAL_GALLERIES=True  # Also prepare ExDark and RTTS for the source selector.
+PRELOAD_MODELS=True  # Warm both original v8 models before opening the demo.
 AUTO_DOWNLOAD_DATASETS=True
 DATA_CACHE=Path('/kaggle/working/lryolo_voc_data')
 DATA_OVERRIDES={}  # Optional family -> explicit native train/clean_val settings.
-AUTHOR_RELEASES=['voc_dark_v8','voc_dark_v10','voc_haze_v8','voc_haze_v10']  # Original models for both families/architectures.
+AUTHOR_RELEASES=['voc_haze_v8','voc_dark_v8']  # ONLY two original v8 checkpoints; low-light active after warmup.
 AUTHOR_CHECKPOINT_MEMBERS={}  # Only needed if an archive contains several candidates.
 AUTHOR_CACHE=Path('/kaggle/working/lryolo_author_models')
 NGROK_TOKEN_MODE=__TOKEN_MODE_LITERAL__
 NGROK_AUTHTOKEN=__TOKEN_VALUE_LITERAL__  # Used directly; never printed.
-MODELS=None  # Mounted/new self-trained checkpoints; author releases added separately.
+MODELS=[]  # No auto-discovery or experimental checkpoints for this presentation.
 # MODELS=[dict(id='my-s1',label='YOLOv10-S · S1',architecture='v10',degradation='low_light',
 #   stage='dark',case_id=6,checkpoint='/kaggle/input/.../best_....pth',
 #   config='/kaggle/input/.../resolved_config.py')]
@@ -107,6 +109,10 @@ for family in GALLERY_FAMILIES:
     print('Preparing demo VOC pool:',family,GALLERY_POOL,flush=True)
     gallery.append(prepare_gallery(family,DATA_CACHE,auto_download=AUTO_DOWNLOAD_DATASETS,
         overrides=DATA_OVERRIDES.get(family),pool=GALLERY_POOL))
+    if DOWNLOAD_REAL_GALLERIES:
+        print('Preparing real-image pool:', 'ExDark' if family=='low_light' else 'RTTS',flush=True)
+        gallery.append(prepare_gallery(family,DATA_CACHE,auto_download=AUTO_DOWNLOAD_DATASETS,
+            overrides=DATA_OVERRIDES.get(family),pool='real_test'))
 report_rows=json.loads((BUNDLE/'vision_demo/config/research_results.json').read_text()) if REPORTS is None else REPORTS
 for name,value in [('models',model_registry),('gallery',gallery),('reports',report_rows)]:
     (OUTPUT/f'{name}.json').write_text(json.dumps(value,indent=2))
@@ -131,13 +137,14 @@ if 'api_process' in globals() and api_process.poll() is None:
 env=os.environ.copy()
 env.update(LRYOLO_REPO=str(REPO),LRYOLO_MODELS=str(OUTPUT/'models.json'),LRYOLO_GALLERY=str(OUTPUT/'gallery.json'),
     LRYOLO_REPORTS=str(OUTPUT/'reports.json'),LRYOLO_OUTPUT=str(OUTPUT/'artifacts'),
+    LRYOLO_PRELOAD=json.dumps([m['id'] for m in author_models] if PRELOAD_MODELS else []),
     PYTHONPATH=str(REPO)+os.pathsep+str(BUNDLE)+os.pathsep+env.get('PYTHONPATH',''))
 log_path=OUTPUT/'server.log';log_file=log_path.open('a')
 api_process=subprocess.Popen([sys.executable,'-m','uvicorn','vision_demo.server.app:app',
     '--host','0.0.0.0','--port',str(PORT),'--workers','1'],cwd=BUNDLE,env=env,
     stdout=log_file,stderr=subprocess.STDOUT)
 try:
-    for attempt in range(90):
+    for attempt in range(600):
         if api_process.poll() is not None:
             raise RuntimeError('Server stopped: '+log_path.read_text(errors='replace')[-6000:])
         try:
@@ -148,7 +155,8 @@ try:
     else:raise TimeoutError('Check '+str(log_path))
     public_tunnel=ngrok.connect(PORT,'http')
     print('OPEN DEMO:',public_tunnel.public_url,flush=True)
-    print('Models load lazily on first inference. Logs:',log_path,flush=True)
+    print('Original v8 models preloaded' if PRELOAD_MODELS else 'Models load on first inference',flush=True)
+    print('One active model on GPU; inactive cached models stay on CPU. Logs:',log_path,flush=True)
 except Exception:
     api_process.terminate()
     log_file.close()

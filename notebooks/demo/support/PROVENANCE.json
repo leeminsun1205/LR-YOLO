@@ -5,7 +5,8 @@
   },
   "voc_adapter_workflow.py": {
     "source": "notebooks/voc_adapter_workflow.py",
-    "sha256": "e2ab461f7035088be667221e47b0d26d720c5228d631a85e0cfb765c7f9b49b6"
+    "sha256": "cfae9ce0061f461f2b6887f0f4fec6b400bbb93be392b654fee755d81cc386c3",
+    "demo_patch": "2026-11-20: permit native ExDark Cup/Table as excluded non-target classes; target class order unchanged."
   },
   "original_voc_workflow.py": {
     "source": "notebooks/original_voc_workflow.py",

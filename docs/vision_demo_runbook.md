@@ -279,3 +279,25 @@ Minh họa S1/S2/S3 và bảng12 kết quả haze có sẵn giống low-light.
 Sương mù thật hoặc gallery fixed_test giữ degradation tắt mặc định; không cần
 tạo thêm sương mù. Model haze dùng5 lớp gốc; không dùng checkpoint low-light
 10lớp thay cho haze. S3 inference vẫn không cần cache prototype.
+
+
+## Cấu hình báo cáo gọn: chỉ hai model gốc v8 + VOC/ExDark/RTTS
+
+Bản mới nhất ghi đè các mặc định cũ: AUTHOR_RELEASES=['voc_haze_v8',
+'voc_dark_v8'], MODELS=[] (không tự dò output train), PRELOAD_MODELS=True.
+Giao diện chọn sẵn v8, chỉ hiện kiến trúc có model. Không nạp v10 hoặc S1/S2/S3
+để suy luận. Bảng kết quả đã ghi nhận vẫn giữ riêng trên trang thực nghiệm.
+
+Giữ GALLERY_FAMILIES=['low_light','haze'], GALLERY_POOL='clean_val' để random
+VOC như cũ. DOWNLOAD_REAL_GALLERIES=True tải thêm ExDark/RTTS khi chạy cell5.
+Chọn VOC hoặc ExDark/RTTS bằng nút nguồn ảnh; mặc định VOC. Ảnh thực không tạo
+thêm suy giảm khi chọn. GT ExDark được ánh xạ tên lớp People/Car/... sang
+nhãn detector person/car/...; Cup và Table ngoài bài toán10lớp được bỏ qua.
+Hỗ trợ manifest ID gồm đuôi .jpg và XML .jpg.xml, không sửa dữ liệu gốc.
+
+Trước khi mở link, server nạp và warmup hai model theo thứ tự haze rồi low-light.
+Chỉ một model ởGPU; model còn lại nằmCPU. Đổi miền chuyển model đã cache, không
+đọc checkpoint lại. Một image warmup từ từng gallery, không dùng để báo metric.
+Cellserver chờ tối đa600giây để khởi tạo lần đầu; tiến độ ở server.log.
+Nếu muốn bỏ warmup đặt PRELOAD_MODELS=False. Cần upload notebook mới hoặc thay
+payload/backend/frontend đồng bộ; không chỉ sửa hai biến trong notebook cũ.
