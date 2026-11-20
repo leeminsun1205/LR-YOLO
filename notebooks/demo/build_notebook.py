@@ -46,8 +46,9 @@ print('Demo bundle:',BUNDLE,flush=True)
 '''
     cells=[cell('markdown','''
 # LR-YOLO Vision Lab · Kaggle demo
-React + FastAPI + Ngrok. No OpenAI API or training. Default downloads the author
-VOC_Dark/v10 release; no self-trained checkpoint required. Other3releases optional.
+React + FastAPI + Ngrok. No OpenAI API or training. Default prepares both low-light
+and haze galleries, plus all four author VOC releases (v8/v10 for each family).
+No self-trained checkpoint required for the original models.
 For your own models, attach checkpoints WITH
 resolved_config.py, provenance.json and session_state.json; attach tested MMCV
 T4 wheel. Enable GPU and Internet. Keep your configured Ngrok token mode.
@@ -63,12 +64,12 @@ REPO=Path('/kaggle/working/LR-YOLO-demo')
 OUTPUT=Path('/kaggle/working/lryolo_demo_runtime');OUTPUT.mkdir(exist_ok=True)
 INSTALL_ENVIRONMENT=True  # Uses known Python3.10.10/Torch2.5.1/MMCV wheel recipe.
 MMCV_WHEEL=None  # Set explicit wheel path if several are attached.
-GALLERY_FAMILIES=['low_light']  # Add 'haze' to prepare the second native VOC bundle.
+GALLERY_FAMILIES=['low_light','haze']  # Both random VOC pools; keep one to limit downloads.
 GALLERY_POOL='clean_val'  # Or fixed_test: already degraded, do not darken again.
 AUTO_DOWNLOAD_DATASETS=True
 DATA_CACHE=Path('/kaggle/working/lryolo_voc_data')
 DATA_OVERRIDES={}  # Optional family -> explicit native train/clean_val settings.
-AUTHOR_RELEASES=['voc_dark_v10']  # Also: voc_dark_v8, voc_haze_v10, voc_haze_v8.
+AUTHOR_RELEASES=['voc_dark_v8','voc_dark_v10','voc_haze_v8','voc_haze_v10']  # Original models for both families/architectures.
 AUTHOR_CHECKPOINT_MEMBERS={}  # Only needed if an archive contains several candidates.
 AUTHOR_CACHE=Path('/kaggle/working/lryolo_author_models')
 NGROK_TOKEN_MODE=__TOKEN_MODE_LITERAL__

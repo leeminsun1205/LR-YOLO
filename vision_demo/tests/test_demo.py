@@ -122,6 +122,62 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
         np.testing.assert_array_equal(*images)
         self.assertEqual(self.engine.inputs,[])
 
+    async def test_haze_has_random_preview_comparison_export_and_all_patch_methods(self):
+        # Exercise the real API/image/sampler paths with a five-class haze gallery.
+        haze=Gallery([dict(self.spec,id='haze',degradation='haze')])
+        self.gallery.items.update(haze.items)
+        key=next(iter(haze.items))
+        for case in (0,6,8,9):
+            ident=f'haze-{case}'
+            self.registry[ident]=dict(id=ident,label=ident,available=True,
+                degradation='haze',architecture='v8',stage='dark',case_id=case,
+                classes=list(CLASSES['haze']))
+        r=await self.client.get('/api/examples/random?degradation=haze')
+        self.assertEqual(r.status_code,200)
+        self.assertEqual(r.json()['degradation'],'haze')
+        detail=(await self.client.get('/api/examples/'+key)).json()
+        self.assertEqual(detail['annotations'][0]['label'],'car')
+        preview=await self.client.post('/api/preview',params=dict(example_id=key,mode='haze',beta=.10))
+        self.assertEqual(preview.status_code,200)
+        expected=np.asarray(decode_image(preview.content))
+        for case in (6,8,9):
+            illustration=await self.client.get(f'/api/examples/{key}/sampling?case_id={case}&seed=42')
+            self.assertEqual(illustration.status_code,200)
+            self.assertEqual(decode_image(illustration.content).size,(640,640))
+            r=await self.client.post('/api/jobs',params=dict(
+                example_id=key,mode='haze',beta=.10,model_ids=json.dumps(['haze-0',f'haze-{case}'])))
+            self.assertEqual(r.status_code,202,r.text)
+            for _ in range(100):
+                out=(await self.client.get('/api/jobs/'+r.json()['id'])).json()
+                if out['status'] in ('completed','failed'):break
+                await asyncio.sleep(.01)
+            self.assertEqual(out['status'],'completed',out)
+            self.assertEqual(out['degradation']['mode'],'haze')
+            self.assertEqual(out['example']['degradation'],'haze')
+            for actual in self.engine.inputs[-2:]:np.testing.assert_array_equal(actual,expected)
+            self.assertEqual(out['results'][1]['classes'],list(CLASSES['haze']))
+            self.assertEqual(len(out['results'][1]['classes']),5)
+            for result in out['results']:
+                self.assertEqual((await self.client.get(result['annotated_url'])).status_code,200)
+                self.assertEqual((await self.client.get(result['reconstruction_url'])).status_code,200)
+            export=(await self.client.get(f'/api/artifacts/{out["id"]}/result.json')).json()
+            self.assertEqual(export['degradation']['beta'],.10)
+            self.assertNotIn('ap50',export)
+
+    async def test_demo_notebook_enables_both_galleries_and_four_original_models(self):
+        import ast
+        builder=Path(__file__).resolve().parents[2]/'notebooks/demo/build_notebook.py'
+        constants=[n.value for n in ast.walk(ast.parse(builder.read_text()))
+                   if isinstance(n,ast.Constant) and isinstance(n.value,str)]
+        source=next(s for s in constants if 'GALLERY_FAMILIES=' in s)
+        assignments={n.targets[0].id:ast.literal_eval(n.value)
+                     for n in ast.parse(source).body if isinstance(n,ast.Assign)
+                     and isinstance(n.targets[0],ast.Name)
+                     and n.targets[0].id in ('GALLERY_FAMILIES','AUTHOR_RELEASES')}
+        self.assertEqual(assignments['GALLERY_FAMILIES'],['low_light','haze'])
+        self.assertEqual(set(assignments['AUTHOR_RELEASES']),
+                         {'voc_dark_v8','voc_dark_v10','voc_haze_v8','voc_haze_v10'})
+
     async def test_all_current_methods_serve_native_tensors_without_bank(self):
         from vision_demo.server.inference import serving_model_config
         for version in ('v8','v10'):

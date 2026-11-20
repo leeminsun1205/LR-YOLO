@@ -33,15 +33,16 @@ Kaggle và tunnel còn sống. Giới hạn Ngrok tùy tài khoản, không hứ
 
 ## Dataset và nút random
 
-Mặc định `GALLERY_FAMILIES=['low_light']`, `GALLERY_POOL='clean_val'`,
+Mặc định `GALLERY_FAMILIES=['low_light','haze']`, `GALLERY_POOL='clean_val'`,
 `AUTO_DOWNLOAD_DATASETS=True`. Nếu thiếu, helper tải bundle clean VOC gốc của
 tác giả, giải nén an toàn và dùng manifest validation sạch trong bundle để
 random. Nó KHÔNG chia lại dữ liệu hay ghi vào dataset gốc. Bundle có cả train,
-nhưng mặc định random chỉ từ clean internal val. Chuẩn bị từng family một để
-tránh tải cả hai dataset nếu chưa cần. Dataset lớn KHÔNG được tải local khi build.
+nhưng mặc định random chỉ từ clean internal val. Cả hai miền được chuẩn bị sẵn.
+Có thể giữ một family trong danh sách nếu muốn giảm dung lượng tải trên Kaggle.
+Dataset lớn KHÔNG được tải local khi build.
 
-Thêm `'haze'` vào GALLERY_FAMILIES để có random VOC_Haze; lớp haze5 và low-light10
-khác nhau. Nếu dataset đã mount, dùng DATA_OVERRIDES hoặc để helper dò native
+Random VOC_Haze hoạt động ngay khi chọn Haze trên giao diện; lớp haze5 và
+low-light10 khác nhau. Nếu dataset đã mount, dùng DATA_OVERRIDES hoặc để helper dò native
 layout. `GALLERY_POOL='fixed_test'` dùng bộ đã degradation offline; UI mặc định
 không thêm gamma/haze. Random là minh họa, không dùng để chọn checkpoint hoặc
 đổi hyperparameter theo final test. Model VOC không có semantics BDD10classes.
@@ -148,11 +149,11 @@ tiếp UserSecretsClient, thay dòng ngrok.set_auth_token đó bằng
 Notebook mới mặc định:
 
 ```python
-AUTHOR_RELEASES = ['voc_dark_v10']
+AUTHOR_RELEASES = ['voc_dark_v8', 'voc_dark_v10', 'voc_haze_v8', 'voc_haze_v10']
 AUTHOR_CHECKPOINT_MEMBERS = {}
 AUTHOR_CACHE = Path('/kaggle/working/lryolo_author_models')
 MODELS = None
-NGROK_TOKEN_MODE = 'prompt'
+# Giữ NGROK_TOKEN_MODE đang có trong notebook của bạn.
 ```
 
 Không cần có checkpoint tự train để bắt đầu. Cell chuẩn bị registry sẽ tải từ
@@ -170,8 +171,8 @@ Bốn ID được xác minh từ README chính thức:
 | voc_haze_v8 | VOC_Haze / LR-YOLOv8-S |5|
 
 Ví dụ tải cả hai bản low-light:
-`AUTHOR_RELEASES=['voc_dark_v10','voc_dark_v8']`. Chỉ tải model đã chọn, không tự
-tải cả bốn. Muốn random haze cũng thêm haze vào GALLERY_FAMILIES. Muốn chỉ dùng
+`AUTHOR_RELEASES=['voc_dark_v10','voc_dark_v8']`. Chỉ tải model trong danh sách;
+mặc định mới chọn cả bốn để demo đủ low-light/haze và v8/v10. Muốn chỉ dùng
 model tự train, đặt AUTHOR_RELEASES=[] và khai báo MODELS hoặc dùng discovery.
 
 Release cache gồm file download, author_checkpoint.pth và release.json chứa
@@ -257,11 +258,24 @@ Notebook có thay đổi ở:
   `REPORTS is None`. Tự dò các output train có sidecar, bao gồm case 9.
 - **Cell 2** (giải nén, `demo-001`): payload mới chứa source, frontend và số liệu.
 
-Để random được cả hai miền, đổi `GALLERY_FAMILIES=['low_light','haze']`.
-Để có baseline tác giả ở cả hai kiến trúc/miền, chọn các ID tương ứng trong
-`AUTHOR_RELEASES`; giữ mặc định nếu chỉ cần low-light/v10. Không bắt buộc tải
-cả bốn checkpoint nếu chưa dùng.
+Mặc định mới chuẩn bị cả hai miền: `GALLERY_FAMILIES=['low_light','haze']`
+và cả bốn baseline tác giả trong `AUTHOR_RELEASES`. Giảm hai danh sách này nếu
+chỉ cần một miền hoặc một kiến trúc. S1/S2/S3 vẫn cần mount output dark tương ứng.
 
 Cần upload notebook mới để nhận payload mới. Chỉ đổi CASE_ID trong notebook demo
 cũ không bổ sung code serving S3 hay giao diện mới. Nếu thay payload trong một
 phiên đã import app cũ, dừng server và restart kernel để tránh module cache cũ.
+
+
+## Haze có đủ tính năng như low-light — 2026-11-20
+
+Cell3 mặc định bật cả hai gallery và cả bốn checkpoint tác giả; không đổi cách
+nạp checkpoint tự train hoặc token. Chuyển sang Haze trên giao diện để dùng:
+ảnh VOC_Haze ngẫu nhiên, upload ảnh, bật/tắt sương mù và chỉnh beta .05–.14,
+preview trước/sau, bounding box/class/confidence, GT từ XML của gallery,
+reconstruction phụ, so sánh hai model cùng đầu vào và export PNG/JSON.
+Minh họa S1/S2/S3 và bảng12 kết quả haze có sẵn giống low-light.
+
+Sương mù thật hoặc gallery fixed_test giữ degradation tắt mặc định; không cần
+tạo thêm sương mù. Model haze dùng5 lớp gốc; không dùng checkpoint low-light
+10lớp thay cho haze. S3 inference vẫn không cần cache prototype.
