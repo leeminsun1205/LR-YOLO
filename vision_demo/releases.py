@@ -113,7 +113,7 @@ def prepare_author_release(repo,cache,release_id,member=None,downloader=None):
             provenance_limit='published author release; exact training history/regularization not independently verified')
         os.replace(pending,checkpoint)
         sidecar.write_text(json.dumps(record,indent=2)+'\n')
-    return dict(id='author-'+release_id,label=f'Author LR-YOLO{version} · {"VOC_Dark" if family=="low_light" else "VOC_Haze"}',
+    return dict(id='author-'+release_id,label=f'LR-YOLO gốc · YOLO{version}-S · tác giả · {"VOC_Dark" if family=="low_light" else "VOC_Haze"}',
         architecture=version,degradation=family,stage='dark',case_id=0,origin='author_release',
         checkpoint=str(checkpoint),config=str(config),sha256=record['checkpoint_sha256'],
         release_id=release_id,release_source=SOURCE)

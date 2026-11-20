@@ -6,6 +6,7 @@ import random
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from ..methods import method_info
 
 CLASSES = {
     'low_light': ('person','car','bus','bicycle','motorbike','boat','bottle','chair','dog','cat'),
@@ -30,10 +31,11 @@ def load_registry(path):
             raise ValueError('Invalid/duplicate model ID')
         if e['degradation'] not in CLASSES or e['architecture'] not in ('v8','v10'):
             raise ValueError('Invalid model family/architecture')
-        if e.get('stage') not in ('clean','dark') or e.get('case_id') not in (*range(7),8):
+        if e.get('stage') not in ('clean','dark') or e.get('case_id') not in (*range(7),8,9):
             raise ValueError('Model stage/case must be explicit')
         if e['stage']=='clean' and e['case_id']!=0: raise ValueError('Clean requires S0')
         e['classes']=list(CLASSES[e['degradation']])
+        e['method']=method_info(e['case_id'],e['stage'])
         e['available']=all(Path(e.get(k,'')).is_file() for k in ('checkpoint','config'))
         result[key]=e
     return result
@@ -99,10 +101,12 @@ def load_reports(path):
         if row['id'] in ids: raise ValueError('Duplicate report ID')
         ids.add(row['id'])
         if row['degradation'] not in CLASSES: raise ValueError('Report family invalid')
-        if not isinstance(row['epochs'],int) or row['epochs']<0: raise ValueError('Report epochs invalid')
-        for key in ('ap50','train_hours','vram_gb'):
+        if row['epochs'] is not None and (not isinstance(row['epochs'],int) or row['epochs']<0): raise ValueError('Report epochs invalid')
+        for key in ('ap50','all_objects_ap50','train_hours','vram_gb'):
             value=row.get(key)
             if value is not None and (not isinstance(value,(int,float)) or not math.isfinite(value) or value<0):
                 raise ValueError(f'Report {key} must be finite and nonnegative')
         if row.get('ap50') is not None and row['ap50']>1: raise ValueError('AP50 must be a fraction, not percent')
+        if row.get('all_objects_ap50') is not None and row['all_objects_ap50']>1:
+            raise ValueError('All-object AP50 must be a fraction, not percent')
     return rows

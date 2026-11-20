@@ -9,9 +9,11 @@ cài Node trên Kaggle để chạy bản đã đóng gói. Không sửa noteboo
 Attach wheel MMCV T4 đã dùng và output model. Với mỗi model, giữ:
 - Checkpoint tin cậy (`best_*.pth` để demo model được chọn).
 - `resolved_config.py` cùng run, `provenance.json`, `session_state.json`.
-- Các report đánh giá/compute nếu muốn hiển thị trang thực nghiệm.
+- Không cần cache prototype, audit report hoặc checkpoint clean để suy luận S3.
+- Bản mới có sẵn 24 kết quả đánh giá từ log đã cung cấp; có thể thay REPORTS.
 
-Chọn Python3.10.10 / GPU T4 / Internet. Tạo Kaggle Secret **NGROK_AUTH_TOKEN**.
+Chọn Python3.10.10 / GPU T4 / Internet. Giữ chế độ token Ngrok đã cấu hình;
+chỉ dùng Kaggle Secrets nếu chọn chế độ `secrets`.
 Không cần OPENAI_API_KEY, GITHUB_TOKEN hoặc dataset của Drill. Server dùng1GPU;
 chạy demo trong session riêng để tránh giành VRAM với training.
 
@@ -25,8 +27,8 @@ chạy demo trong session riêng để tránh giành VRAM với training.
 5. Khởi động FastAPI, health check và mở link Ngrok.
 6. Cuối notebook có cell dừng đúng server/tunnel này; không xóa output.
 
-Nếu token chưa cấp cho notebook, bật quyền truy cập secret trong giao diện
-Kaggle. Không paste token vào code/frontend. Link chỉ hoạt động khi session
+Nếu dùng chế độ secrets, bật quyền truy cập secret trong giao diện Kaggle.
+Token nằm phía notebook/server, không đưa vào frontend hoặc log. Link chỉ hoạt động khi session
 Kaggle và tunnel còn sống. Giới hạn Ngrok tùy tài khoản, không hứa24/7.
 
 ## Dataset và nút random
@@ -59,7 +61,7 @@ Có thể khai báo MODELS tường minh:
 
 ```python
 MODELS = [dict(
-    id='v10-lowlight-s6', label='LR-YOLOv10 · S6',
+    id='v10-lowlight-s1', label='YOLOv10-S · S1',
     architecture='v10', degradation='low_light', stage='dark', case_id=6,
     checkpoint='/kaggle/input/THU_MUC_RUN/best_voc_standard_mAP_epoch_N.pth',
     config='/kaggle/input/THU_MUC_RUN/resolved_config.py',
@@ -98,7 +100,7 @@ server.log. Không âm thầm bỏ weights/loss module chỉ để load được
   CUDA sync, sau1warmup; không gồm network/coldload. Không gọi là benchmarkFPS.
 - Trang thực nghiệm đọc REPORTS, không chạy full evaluator. Source, actual
   epochs, VRAM scope hiển thị; dữ liệu thiếu không được tạo giả.
-- Minh họa patch S0/S1/S3/S6 từ gallery annotated trên virtual640canvas, seed
+- Minh họa LR-YOLO gốc, S1, S2, S3 từ gallery annotated trên virtual640canvas, seed
   cố định. Đây là mô phỏng sampling, không chạy optimizer, không phải attention.
 
 Giới hạn bản đầu:20MB/16MP, tối đa2model/request cùngfamily,4job chờ/chạy,
@@ -107,7 +109,7 @@ export rồi khởi động server mới. Không video/webcam/live training ở 
 
 ## Phát triển local và rebuild
 
-Frontend: `cd vision_demo/web`, `npm install`, `npm run build`. Sau đó ở Git repo root `LR-YOLO/`:
+Frontend (dùng dependencies đã có): `cd vision_demo/web`, `npm run build`. Sau đó ở Git repo root `LR-YOLO/`:
 `python notebooks/demo/build_notebook.py`. Bundle nhúng đúng dist; thay source
 phải build lại để Kaggle nhận code mới.
 
@@ -202,11 +204,64 @@ rebuild. Clone không có file cấu hình này sẽ mặc định prompt; có t
 mode bằng cell tham số. Không in giá trị token trong log.
 
 
-## S8 checkpoints and sampling illustration
+## Ghi chú hỗ trợ case 8 trước đây (tên hiện tại: S2)
 
 The demo now accepts case8 (coverage-guided object/uniform). S7 remains reserved.
 Native inference drops the training-only coverage_candidates knob along with
 other sampler fields and strict-loads the original prediction tensors. The
-illustration tab includes S8 and uses its actual pure-Python geometry sampler;
-it does not perform8network predictions. Inference selection prefers an
-availableS8 checkpoint as comparisonB, otherwiseS6. No S8 model/AP is fabricated.
+illustration tab uses its actual pure-Python geometry sampler; it does not
+perform eight network predictions. Current UI labels and default comparison
+selection are described in the 2026-11-20 section below.
+
+
+## Bản demo S1 / S2 / S3 — 2026-11-20
+
+Tên trong giao diện thống nhất với slides; mã checkpoint và contract giữ nguyên:
+
+| Giao diện | case_id trong registry | Cơ chế khi huấn luyện |
+|---|---:|---|
+| LR-YOLO gốc | 0 | Tái tạo toàn ảnh |
+| S1 | 6 | Một vùng theo đối tượng + một vùng ngẫu nhiên |
+| S2 | 8 | Chọn vùng theo độ bao phủ, giữ ngân sách hai vùng |
+| S3 | 9 | S2 + prototype sạch có trọng số độ tin cậy |
+
+Các case cũ 1–5 vẫn đọc được và ghi rõ là thử nghiệm cũ; không đổi tên chúng
+thành S1/S2/S3. Clean checkpoint được ghi riêng là Clean.
+Chọn kiến trúc YOLOv8-S hoặc YOLOv10-S ở thanh phía trên. So sánh A/B dùng cùng
+kiến trúc đang chọn và cùng ảnh đầu vào. Checkpoint chưa mount không được tạo
+thay thế; cần attach output dark đã train của phương án muốn demo.
+
+S3 chỉ dùng prototype trong train. Serving chuyển constructor sang detector
+native có cùng tensors, bỏ đúng các option train của prototype/crop, dùng tiền
+xử lý đánh giá thông thường và vẫn `load_state_dict(strict=True)`. Không sửa
+checkpoint, không bỏ qua weights thiếu/thừa, không đọc lại cache prototype.
+Model architecture/class order và checkpoint hash vẫn được kiểm tra.
+
+Trang thực nghiệm có bốn thẻ phương pháp, hình chọn vùng có cùng seed giữa S1/S2
+và hai tỷ lệ diện tích LPIPS 32%, L1 18%. Đây không phải FLOPs toàn mạng. S3 dùng
+cùng hình vùng cắt S2; sơ đồ bên dưới giải thích loss bổ sung, không giả lập
+prototype similarity từ ảnh hoặc chạy loss trong inference.
+
+`config/research_results.json` chép 24 bản ghi từ hai CSV kết quả đã đối chiếu
+trong project (haze/lowlight, v8/v10, S1/S2/S3, hai domain mỗi nhánh).
+Giữ giá trị `map_raw` và `all_objects_raw`, tên file bằng chứng và nguồn log.
+Không suy ra epoch, tổng thời gian hoặc VRAM nếu log kết quả không cung cấp.
+Không tự gộp chi phí đo một epoch vào thời gian full training.
+
+Notebook có thay đổi ở:
+
+- **Cell 3** (cấu hình, `demo-002`): `REPORTS=None` dùng số liệu đóng gói;
+  `REPORTS=[]` ẩn bảng; có thể truyền danh sách riêng như cũ. Các tùy chọn
+  checkpoint, token, gallery và author release giữ cách dùng cũ.
+- **Cell 5** (chuẩn bị registry/gallery, `demo-004`): đọc kết quả đóng gói nếu
+  `REPORTS is None`. Tự dò các output train có sidecar, bao gồm case 9.
+- **Cell 2** (giải nén, `demo-001`): payload mới chứa source, frontend và số liệu.
+
+Để random được cả hai miền, đổi `GALLERY_FAMILIES=['low_light','haze']`.
+Để có baseline tác giả ở cả hai kiến trúc/miền, chọn các ID tương ứng trong
+`AUTHOR_RELEASES`; giữ mặc định nếu chỉ cần low-light/v10. Không bắt buộc tải
+cả bốn checkpoint nếu chưa dùng.
+
+Cần upload notebook mới để nhận payload mới. Chỉ đổi CASE_ID trong notebook demo
+cũ không bổ sung code serving S3 hay giao diện mới. Nếu thay payload trong một
+phiên đã import app cũ, dừng server và restart kernel để tránh module cache cũ.

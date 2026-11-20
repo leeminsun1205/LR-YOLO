@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from .core import Gallery, load_registry, load_reports, digest
 from .imaging import MAX_BYTES, decode_image, degrade, png, annotated
 from .inference import Engine
+from ..methods import METHODS, method_info
 
 
 def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,webdir=None):
@@ -66,6 +67,9 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
     @app.get('/api/experiments')
     def experiments(): return reports
 
+    @app.get('/api/methods')
+    def methods(): return [method_info(case) for case in METHODS]
+
     @app.get('/api/examples/random')
     def random_example(degradation:str='low_light'):
         try: return gallery.choose(degradation)
@@ -85,7 +89,7 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
     @app.get('/api/examples/{key}/sampling')
     def sampling_view(key:str,case_id:int=6,seed:int=42):
         if key not in gallery.items: raise HTTPException(404,'Không tìm thấy ảnh VOC')
-        if case_id not in (0,1,3,6,8): raise HTTPException(422,'Minh họa S0/S1/S3/S6/S8')
+        if case_id not in (0,1,3,6,8,9): raise HTTPException(422,'Minh họa LR-YOLO gốc / S1 / S2 / S3')
         import importlib.util
         from PIL import Image,ImageDraw
         item=gallery.items[key];im=decode_image(item['path'].read_bytes())
@@ -103,7 +107,7 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
             if not path.is_file():raise HTTPException(503,'Sampling source missing from demo checkout')
             spec=importlib.util.spec_from_file_location('demo_sampler',path)
             sampler=importlib.util.module_from_spec(spec);spec.loader.exec_module(sampler)
-            if case_id==8:regions=sampler.sample_coverage_regions(640,640,boxes,seed=seed)
+            if case_id in (8,9):regions=sampler.sample_coverage_regions(640,640,boxes,seed=seed)
             else:regions=sampler.sample_regions(640,640,boxes,seed=seed,object_probability=0,
                 stratified_pair=case_id==6)
             for r in regions:
@@ -112,8 +116,11 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
                 left,top=r['x']+r['core_x'],r['y']+r['core_y']
                 draw.rectangle([left,top,left+r['core'],top+r['core']],outline=color,width=4)
         draw.rectangle([0,0,640,28],fill='#10222e')
-        draw.text((10,8),f'S{case_id} / seed {seed} / sampling illustration, not attention',fill='#e0fff7')
-        return Response(png(canvas),media_type='image/png')
+        name='LR-YOLO' if case_id==0 else method_info(case_id)['name']
+        draw.text((10,8),f'{name} / seed {seed} / training regions, not inference attention',fill='#e0fff7')
+        return Response(png(canvas),media_type='image/png',headers={
+            'X-LRYOLO-Case':str(case_id),
+            'X-LRYOLO-Sampling-Case':str(8 if case_id==9 else case_id)})
 
     @app.post('/api/preview')
     async def preview(request:Request,example_id:str='',mode:str='none',

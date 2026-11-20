@@ -1,4 +1,42 @@
 [
-  {"id":"v10-lowlight-s0","label":"LR-YOLOv10 · Baseline S0","architecture":"v10","degradation":"low_light","stage":"dark","case_id":0,"checkpoint":"/kaggle/input/YOUR_BASELINE/best_voc_standard_mAP_epoch_N.pth","config":"/kaggle/input/YOUR_BASELINE/resolved_config.py"},
-  {"id":"v10-lowlight-s6","label":"LR-YOLOv10 · Selective S6","architecture":"v10","degradation":"low_light","stage":"dark","case_id":6,"checkpoint":"/kaggle/input/YOUR_S6/best_voc_standard_mAP_epoch_N.pth","config":"/kaggle/input/YOUR_S6/resolved_config.py"}
+  {
+    "id": "v10-lowlight-case0",
+    "label": "YOLOv10-S · LR-YOLO gốc",
+    "architecture": "v10",
+    "degradation": "low_light",
+    "stage": "dark",
+    "case_id": 0,
+    "checkpoint": "/kaggle/input/YOUR_CASE_0/best_voc_standard_mAP_epoch_N.pth",
+    "config": "/kaggle/input/YOUR_CASE_0/resolved_config.py"
+  },
+  {
+    "id": "v10-lowlight-case6",
+    "label": "YOLOv10-S · S1",
+    "architecture": "v10",
+    "degradation": "low_light",
+    "stage": "dark",
+    "case_id": 6,
+    "checkpoint": "/kaggle/input/YOUR_CASE_6/best_voc_standard_mAP_epoch_N.pth",
+    "config": "/kaggle/input/YOUR_CASE_6/resolved_config.py"
+  },
+  {
+    "id": "v10-lowlight-case8",
+    "label": "YOLOv10-S · S2",
+    "architecture": "v10",
+    "degradation": "low_light",
+    "stage": "dark",
+    "case_id": 8,
+    "checkpoint": "/kaggle/input/YOUR_CASE_8/best_voc_standard_mAP_epoch_N.pth",
+    "config": "/kaggle/input/YOUR_CASE_8/resolved_config.py"
+  },
+  {
+    "id": "v10-lowlight-case9",
+    "label": "YOLOv10-S · S3",
+    "architecture": "v10",
+    "degradation": "low_light",
+    "stage": "dark",
+    "case_id": 9,
+    "checkpoint": "/kaggle/input/YOUR_CASE_9/best_voc_standard_mAP_epoch_N.pth",
+    "config": "/kaggle/input/YOUR_CASE_9/resolved_config.py"
+  }
 ]

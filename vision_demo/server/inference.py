@@ -5,6 +5,33 @@ import time
 from pathlib import Path
 import numpy as np
 from .core import CLASSES, digest
+from ..methods import method_info
+
+
+def serving_model_config(model):
+    """Keep native prediction tensors; exclude only known training constructor options.
+
+    S9 prototype buffers are nonpersistent, so strict state loading still applies.
+    No bank file or custom training detector is constructed for serving.
+    """
+    result=copy.deepcopy(model)
+    if result['type']=='PrototypeMemorySelectiveDetector':
+        if result.get('sparse_case',8)!=8:
+            raise ValueError('Prototype detector must preserve coverage sampling')
+        for key in ('prototype_directory','prototype_identity','prototype_bank_sha256',
+                    'prototype_weight','prototype_warmup_updates','prototype_cap','prototype_profile'):
+            result.pop(key,None)
+        result['type']='SelectiveReconstructionDetector'
+    if result['type']=='SelectiveReconstructionDetector':
+        result['type']='YOLOReconstructDehazeDetector'
+        for key in ('sparse_case','crop_count','crop_core','crop_halo','sampling_seed','coverage_candidates'):
+            result.pop(key,None)
+    if result['type'] not in ('YOLOReconstructDetector','YOLOReconstructDehazeDetector'):
+        raise ValueError('Unsupported detector type; use native/selective reconstruction checkpoints')
+    result['data_preprocessor']['type']='YOLOv5DetDataPreprocessor'
+    result.pop('init_cfg',None)
+    result['backbone'].pop('init_cfg',None)
+    return result
 
 
 def serving_pipeline(pipeline):
@@ -54,13 +81,7 @@ class Engine:
         if cfg.model.bbox_head.head_module.num_classes!=len(entry['classes']): raise ValueError('Config class count mismatch')
         # Experimental sparse cases only change TRAINING. The inherited prediction
         # path is the native full reconstruction detector, with identical tensors.
-        if cfg.model.type=='SelectiveReconstructionDetector':
-            cfg.model.type='YOLOReconstructDehazeDetector'
-            for p in ('sparse_case','crop_count','crop_core','crop_halo','sampling_seed','coverage_candidates'): cfg.model.pop(p,None)
-        if cfg.model.type not in ('YOLOReconstructDetector','YOLOReconstructDehazeDetector'):
-            raise ValueError('Unsupported detector type; use native/selective reconstruction checkpoints')
-        cfg.model.data_preprocessor.type='YOLOv5DetDataPreprocessor'
-        cfg.model.pop('init_cfg',None); cfg.model.backbone.pop('init_cfg',None)
+        cfg.model=serving_model_config(cfg.model)
         register_all_modules()
         with torch.cuda.device(self.device):
             model=MODELS.build(cfg.model); model.init_weights()
@@ -72,6 +93,7 @@ class Engine:
         self.metadata[key]=dict(checkpoint_sha256=sha,checkpoint_epoch=meta.get('epoch'),
             origin=entry.get('origin','self_trained'),stage=entry['stage'],case_id=entry['case_id'],architecture=entry['architecture'],
             degradation=entry['degradation'],provenance_verified=bool(sparse),
+            method=method_info(entry['case_id'],entry['stage']),
             training_target=contract.get('target_epochs'),completed_epochs=entry.get('completed_epochs'),
             run_target_epochs=entry.get('run_target_epochs'),precision='fp32')
         del saved,state

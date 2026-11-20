@@ -50,7 +50,8 @@ React + FastAPI + Ngrok. No OpenAI API or training. Default downloads the author
 VOC_Dark/v10 release; no self-trained checkpoint required. Other3releases optional.
 For your own models, attach checkpoints WITH
 resolved_config.py, provenance.json and session_state.json; attach tested MMCV
-T4 wheel. Enable GPU and Internet. Create NGROK_AUTH_TOKEN in Kaggle Secrets.
+T4 wheel. Enable GPU and Internet. Keep your configured Ngrok token mode.
+Presentation: S1=case6, S2=case8, S3=case9. Inference needs no prototype cache or audit.
 Default gallery downloads the author clean VOC bundle if not mounted. Low-light
 and haze use DIFFERENT class lists. Random samples are illustration, not benchmark.
 Use a separate session from long training. Read docs/vision_demo_runbook.md locally.
@@ -73,10 +74,10 @@ AUTHOR_CACHE=Path('/kaggle/working/lryolo_author_models')
 NGROK_TOKEN_MODE=__TOKEN_MODE_LITERAL__
 NGROK_AUTHTOKEN=__TOKEN_VALUE_LITERAL__  # Used directly; never printed.
 MODELS=None  # Mounted/new self-trained checkpoints; author releases added separately.
-# MODELS=[dict(id='my-s6',label='YOLOv10 S6',architecture='v10',degradation='low_light',
+# MODELS=[dict(id='my-s1',label='YOLOv10-S · S1',architecture='v10',degradation='low_light',
 #   stage='dark',case_id=6,checkpoint='/kaggle/input/.../best_....pth',
 #   config='/kaggle/input/.../resolved_config.py')]
-REPORTS=[]  # Optional measured rows. See vision_demo/config/reports.schema.example.md locally.
+REPORTS=None  # None: 24 evaluations supplied by project owner; []: hide; list: your own reports.
 PORT=8501
 '''),cell('code','''
 import bdd100k_workflow as shared
@@ -105,7 +106,8 @@ for family in GALLERY_FAMILIES:
     print('Preparing demo VOC pool:',family,GALLERY_POOL,flush=True)
     gallery.append(prepare_gallery(family,DATA_CACHE,auto_download=AUTO_DOWNLOAD_DATASETS,
         overrides=DATA_OVERRIDES.get(family),pool=GALLERY_POOL))
-for name,value in [('models',model_registry),('gallery',gallery),('reports',REPORTS)]:
+report_rows=json.loads((BUNDLE/'vision_demo/config/research_results.json').read_text()) if REPORTS is None else REPORTS
+for name,value in [('models',model_registry),('gallery',gallery),('reports',report_rows)]:
     (OUTPUT/f'{name}.json').write_text(json.dumps(value,indent=2))
 # Frontend is prebuilt in the embedded bundle; Node is not required on Kaggle.
 assert (BUNDLE/'vision_demo/web/dist/index.html').is_file(),'Frontend missing; rebuild notebook after npm build.'

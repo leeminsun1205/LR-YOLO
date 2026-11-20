@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from .methods import model_label
 
 
 def discover_models(roots=('/kaggle/input',)):
@@ -26,8 +27,8 @@ def discover_models(roots=('/kaggle/input',)):
                 checkpoint=best[0] if best else folder/'latest_resume.pth'
                 if not checkpoint.is_file():continue
                 state=json.loads((folder/'session_state.json').read_text()) if (folder/'session_state.json').is_file() else {}
-                ident=f'{version}-{family}-{stage}-s{case}-'+hashlib.sha256(folder.name.encode()).hexdigest()[:8]
-                result.append(dict(id=ident,label=f'YOLO{version} · {"Clean" if stage=="clean" else "S"+str(case)} · {folder.name[-6:]}',
+                ident=f'{version}-{family}-{stage}-s{case}-'+hashlib.sha256(str(folder.resolve()).encode()).hexdigest()[:8]
+                result.append(dict(id=ident,label=f'{model_label(version,case,stage)} · {folder.name[-6:]}',
                     architecture=version,degradation=family,stage=stage,case_id=case,
                     checkpoint=str(checkpoint),config=str(folder/'resolved_config.py'),
                     completed_epochs=state.get('completed_epochs'),run_target_epochs=state.get('target_epochs')))
