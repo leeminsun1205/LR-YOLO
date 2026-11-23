@@ -14,6 +14,7 @@
   },
   "selective_protocol_data.py": {
     "source": "notebooks/selective_reconstruction/protocol_data.py",
-    "sha256": "0d8f07cf7b5bd303d661b5c42e4174d8dc1ca0f1d10f862eee92ff1300402b99"
+    "sha256": "77d122a4291580f00b035cd4333c29e0d45d2782c31d3bb2cc1f35e72b65a763",
+    "demo_patch": "2026-11-23: optional search_roots for explicit ambiguity recovery in inference benchmark; default data/class/metric protocol unchanged."
   }
 }

@@ -301,3 +301,24 @@ Chỉ một model ởGPU; model còn lại nằmCPU. Đổi miền chuyển mode
 Cellserver chờ tối đa600giây để khởi tạo lần đầu; tiến độ ở server.log.
 Nếu muốn bỏ warmup đặt PRELOAD_MODELS=False. Cần upload notebook mới hoặc thay
 payload/backend/frontend đồng bộ; không chỉ sửa hai biến trong notebook cũ.
+
+
+## Detection-only deployment — 2026-11-23
+
+Demo now defaults to encoder→neck→head with the restoration decoder bypassed.
+The trusted checkpoint still loads strictly with all decoder/LPIPS parameters;
+no weights or original source classes are edited. The auxiliary branch trained
+the encoder previously; RGB reconstruction is not an input to the detector.
+
+Use the new “Tạo thêm ảnh khôi phục” control before Chạy nhận diện to request the
+native full decoder and RGB output. The separate display checkbox can then show
+that image. Each mode receives an untimed warmup on first use. JSON records
+inference_mode, decoder_executed and weights_pruned=False. Rebuild/re-upload the
+notebook to get the new embedded backend/runtime/frontend. Previous two-v8-model,
+CPU offload, preloading, VOC and ExDark/RTTS defaults remain. Token preserved.
+
+Benchmark notebook: ../../notebooks/selective_reconstruction/03_inference_benchmark.ipynb.
+It compares each checkpoint to itself with/without decoder. RGB visualization is
+omitted from BOTH timing modes; timings therefore differ in scope from the demo
+“with reconstruction” request, which includes native image interpolation.
+Use its GPU equivalence + full-AP checks before claiming unchanged quality.

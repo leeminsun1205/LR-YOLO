@@ -49,6 +49,7 @@ class Engine:
     def __init__(self,registry,device='cuda:0'):
         self.registry=registry; self.device=device; self.model=None; self.key=None; self.metadata={}
         self.cache={}  # At most two models; inactive models stay in CPU RAM.
+        self.warmed=set()
 
     def load(self,key):
         if key==self.key: return 0.
@@ -111,15 +112,19 @@ class Engine:
         del saved,state
         return time.perf_counter()-start
 
-    def predict(self,key,image):
+    def predict(self,key,image,return_reconstruction=False):
         import torch
         from mmdet.apis import inference_detector
+        from projects.inference_runtime.prediction import prediction_mode
         load_seconds=self.load(key)
         bgr=np.asarray(image)[:,:,::-1].copy()
         # Includes native preprocessing/postprocessing. CUDA synchronized; network
         # and cold checkpoint loading excluded. Warmup is not a measured request.
-        with torch.inference_mode():
-            if load_seconds: inference_detector(self.model,bgr,test_pipeline=self.pipeline)
+        with torch.inference_mode(), prediction_mode(self.model,
+                decoder_free=not return_reconstruction,render_reconstruction=return_reconstruction):
+            if load_seconds or (key,return_reconstruction) not in self.warmed:
+                inference_detector(self.model,bgr,test_pipeline=self.pipeline)
+                self.warmed.add((key,return_reconstruction))
             torch.cuda.synchronize(); start=time.perf_counter()
             result=inference_detector(self.model,bgr,test_pipeline=self.pipeline)
             torch.cuda.synchronize(); elapsed=(time.perf_counter()-start)*1000
@@ -128,11 +133,13 @@ class Engine:
             if label>=len(self.registry[key]['classes']): raise ValueError('Invalid predicted class index')
             boxes.append(dict(bbox=bbox,score=score,label=self.registry[key]['classes'][label]))
         reconstruction=None
-        if hasattr(result,'image') and hasattr(result.image,'output'):
+        if return_reconstruction and hasattr(result,'image') and hasattr(result.image,'output'):
             from PIL import Image
             x=result.image.output.detach().float().cpu().permute(1,2,0).numpy()
             reconstruction=Image.fromarray(np.rint(np.clip(x,0,1)*255).astype('uint8'))
-        return dict(model_id=key,boxes=boxes,metadata=self.metadata[key],
+        metadata=dict(self.metadata[key],inference_mode='with_reconstruction' if return_reconstruction else 'detection_only',
+                      decoder_executed=bool(return_reconstruction),weights_pruned=False)
+        return dict(model_id=key,boxes=boxes,metadata=metadata,
             timing=dict(inference_ms=elapsed,model_load_seconds=load_seconds,
-                scope='native preprocessing + full model prediction + postprocessing; CUDA synchronized; excludes upload, cold load and warmup'),
+                scope='preprocessing + '+('full model incl. reconstruction image interpolation' if return_reconstruction else 'encoder/neck/head, decoder bypassed')+' + postprocessing; CUDA synchronized; excludes upload, cold load, PNG export and warmup'),
             reconstruction=reconstruction)

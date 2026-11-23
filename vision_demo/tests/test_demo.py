@@ -16,13 +16,14 @@ from vision_demo.server.app import create_app
 
 class FakeEngine:
     """Deterministic test double; NEVER wired into shipped serving app."""
-    def __init__(self):self.inputs=[]
-    def predict(self,key,image):
+    def __init__(self):self.inputs=[];self.reconstruction_modes=[]
+    def predict(self,key,image,return_reconstruction=False):
         self.inputs.append(np.asarray(image).copy())
+        self.reconstruction_modes.append(return_reconstruction)
         return dict(model_id=key,boxes=[dict(bbox=[2,3,18,19],label='car',score=.9)],
             metadata=dict(checkpoint_epoch=4,provenance_verified=True),
             timing=dict(inference_ms=1.,model_load_seconds=0.,scope='TEST ONLY'),
-            reconstruction=image.copy())
+            reconstruction=image.copy() if return_reconstruction else None)
 
 
 class DemoTests(unittest.IsolatedAsyncioTestCase):
@@ -89,6 +90,20 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('ap50',out)
         self.assertEqual((await self.client.get(f'/api/artifacts/{ident}/secret.txt')).status_code,404)
 
+    async def test_detection_only_default_and_explicit_reconstruction_request(self):
+        for request_rgb in (False,True):
+            response=await self.client.post('/api/jobs',params=dict(
+                model_ids=json.dumps(['a']),return_reconstruction=request_rgb),content=self.bytes)
+            self.assertEqual(response.status_code,202)
+            for _ in range(100):
+                out=(await self.client.get('/api/jobs/'+response.json()['id'])).json()
+                if out['status'] in ('completed','failed'):break
+                await asyncio.sleep(.01)
+            self.assertEqual(out['status'],'completed',out)
+            self.assertEqual(self.engine.reconstruction_modes[-1],request_rgb)
+            self.assertEqual('reconstruction_url' in out['results'][0],request_rgb)
+            self.assertEqual(out['degradation']['return_reconstruction'],request_rgb)
+
     async def test_invalid_comparisons_and_degradation_do_not_queue_gpu(self):
         for keys,mode in [(['a','h'],'none'),(['a','a'],'none'),(['a'],'haze'),(['unknown'],'none')]:
             r=await self.client.post('/api/jobs',params=dict(model_ids=json.dumps(keys),mode=mode),content=self.bytes)
@@ -145,7 +160,8 @@ class DemoTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(illustration.status_code,200)
             self.assertEqual(decode_image(illustration.content).size,(640,640))
             r=await self.client.post('/api/jobs',params=dict(
-                example_id=key,mode='haze',beta=.10,model_ids=json.dumps(['haze-0',f'haze-{case}'])))
+                example_id=key,mode='haze',beta=.10,return_reconstruction=True,
+                model_ids=json.dumps(['haze-0',f'haze-{case}'])))
             self.assertEqual(r.status_code,202,r.text)
             for _ in range(100):
                 out=(await self.client.get('/api/jobs/'+r.json()['id'])).json()

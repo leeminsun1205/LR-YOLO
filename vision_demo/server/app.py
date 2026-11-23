@@ -153,7 +153,7 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
             results=[]
             for key in keys:
                 job['progress']=f'Đang chạy {registry[key]["label"]}'
-                result=engine.predict(key,processed)
+                result=engine.predict(key,processed,return_reconstruction=options['return_reconstruction'])
                 job['status']='running'
                 restoration=result.pop('reconstruction',None)
                 if restoration is not None:
@@ -177,7 +177,7 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
 
     @app.post('/api/jobs',status_code=202)
     async def submit(request:Request,example_id:str='',model_ids:str='[]',
-                     mode:str='none',gamma:float=2.5,beta:float=.08):
+                     mode:str='none',gamma:float=2.5,beta:float=.08,return_reconstruction:bool=False):
         try:
             keys=json.loads(model_ids)
             if not isinstance(keys,list) or not 1<=len(keys)<=2 or len(set(keys))!=len(keys):
@@ -187,6 +187,7 @@ def create_app(registry=None,gallery=None,reports=None,engine=None,workdir=None,
             families={registry[k]['degradation'] for k in keys}
             if len(families)!=1: raise ValueError('So sánh cần cùng degradation/class semantics')
             options=settings(mode,gamma,beta,next(iter(families)))
+            options['return_reconstruction']=return_reconstruction
             data=await image_data(request,example_id)
             # Validate image/settings before accepting a GPU job.
             im=decode_image(data);degrade(im,mode,gamma,beta)

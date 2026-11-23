@@ -53,7 +53,7 @@ def prepare_training(overrides,cache,degradation='low_light',auto_download=True,
     return result
 
 
-def prepare_final(overrides,cache,domain,degradation='low_light',auto_download=True):
+def prepare_final(overrides,cache,domain,degradation='low_light',auto_download=True,search_roots=None):
     classes_for(degradation)
     expected=('voc','exdark') if degradation=='low_light' else ('voc','rtts')
     if domain not in expected:
@@ -62,7 +62,7 @@ def prepare_final(overrides,cache,domain,degradation='low_light',auto_download=T
     settings=voc.prepare_datasets({alias:overrides.get(domain,{})},
         Path(cache)/'haze' if degradation=='haze' else cache,0,'evaluate',
         final_evaluation=alias=='exdark',domains=(alias,),auto_download=auto_download,
-        release_specs=HAZE_RELEASES if degradation=='haze' else None)[alias]
+        release_specs=HAZE_RELEASES if degradation=='haze' else None,search_roots=search_roots)[alias]
     spec=voc.dataset_spec(domain=alias,**settings,
         **(dict(class_names=HAZE_CLASSES) if degradation=='haze' else {}))
     expected_count=HAZE_RELEASES[alias]['count'] if degradation=='haze' else voc.DATA_RELEASES[alias]['count']

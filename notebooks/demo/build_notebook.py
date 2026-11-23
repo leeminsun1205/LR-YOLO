@@ -26,7 +26,7 @@ def main():
     for name in ('bdd100k_workflow.py','voc_adapter_workflow.py','original_voc_workflow.py'):
         files[name]=(ROOT/'notebooks/demo/support'/name).read_text()
     files['selective_protocol_data.py']=(ROOT/'notebooks/demo/support/selective_protocol_data.py').read_text()
-    for name in ('bdd100k','lowlight_adapter','original_runtime','sparse_reconstruction'):
+    for name in ('bdd100k','lowlight_adapter','original_runtime','sparse_reconstruction','inference_runtime'):
         for p in (ROOT/'projects'/name).glob('*.py'):files[str(p.relative_to(ROOT))]=p.read_text()
     data=json.dumps(files,sort_keys=True).encode();sha=hashlib.sha256(data).hexdigest();payload=base64.b64encode(zlib.compress(data)).decode()
     unpack=f'''
